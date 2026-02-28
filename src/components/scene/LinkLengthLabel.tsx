@@ -1,17 +1,16 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { Html, Line } from "@react-three/drei";
-import type { JointType, RotationAxis } from "../../core/types/robot";
+import type { RotationAxis } from "../../core/types/robot";
 
-interface DOffsetArrowProps {
-  dValue: number;
-  jointIndex: number;
+interface LinkLengthLabelProps {
+  length: number;
+  linkIndex: number;
   rotationAxis: RotationAxis;
-  jointType: JointType;
 }
 
 const labelStyle: React.CSSProperties = {
-  color: "#67e8f9",
+  color: "#2dd4bf",
   fontSize: "11px",
   fontFamily: "monospace",
   fontWeight: "bold",
@@ -19,7 +18,7 @@ const labelStyle: React.CSSProperties = {
   padding: "1px 4px",
   borderRadius: "3px",
   whiteSpace: "nowrap",
-  border: "1px solid rgba(103,232,249,0.3)",
+  border: "1px solid rgba(45,212,191,0.3)",
   pointerEvents: "none",
 };
 
@@ -41,8 +40,8 @@ function getPerpendicularOffset(axis: RotationAxis): [number, number, number] {
   }
 }
 
-export default function DOffsetArrow({ dValue, jointIndex, rotationAxis, jointType }: DOffsetArrowProps) {
-  if (Math.abs(dValue) < 0.001) return null;
+export default function LinkLengthLabel({ length, linkIndex, rotationAxis }: LinkLengthLabelProps) {
+  if (Math.abs(length) < 0.001) return null;
 
   const axisVec = getAxisVector(rotationAxis);
   const offsetVec = getPerpendicularOffset(rotationAxis);
@@ -51,30 +50,30 @@ export default function DOffsetArrow({ dValue, jointIndex, rotationAxis, jointTy
     (): [number, number, number][] => [
       [offsetVec[0], offsetVec[1], offsetVec[2]],
       [
-        offsetVec[0] + axisVec[0] * dValue,
-        offsetVec[1] + axisVec[1] * dValue,
-        offsetVec[2] + axisVec[2] * dValue,
+        offsetVec[0] + axisVec[0] * length,
+        offsetVec[1] + axisVec[1] * length,
+        offsetVec[2] + axisVec[2] * length,
       ],
     ],
-    [dValue, axisVec, offsetVec],
+    [length, axisVec, offsetVec],
   );
 
   const labelPosition = useMemo(() => {
-    const labelOffset = getPerpendicularOffset(rotationAxis);
+    const labelOff = getPerpendicularOffset(rotationAxis);
     return new THREE.Vector3(
-      labelOffset[0] + axisVec[0] * dValue / 2 + (rotationAxis !== "x" ? 0.1 : 0),
-      labelOffset[1] + axisVec[1] * dValue / 2 + (rotationAxis === "x" ? 0.1 : 0),
-      labelOffset[2] + axisVec[2] * dValue / 2,
+      labelOff[0] + axisVec[0] * length / 2 + (rotationAxis !== "x" ? 0.1 : 0),
+      labelOff[1] + axisVec[1] * length / 2 + (rotationAxis === "x" ? 0.1 : 0),
+      labelOff[2] + axisVec[2] * length / 2,
     );
-  }, [dValue, axisVec, rotationAxis]);
+  }, [length, axisVec, rotationAxis]);
 
   const arrowTip = useMemo(
     () => new THREE.Vector3(
-      offsetVec[0] + axisVec[0] * dValue,
-      offsetVec[1] + axisVec[1] * dValue,
-      offsetVec[2] + axisVec[2] * dValue,
+      offsetVec[0] + axisVec[0] * length,
+      offsetVec[1] + axisVec[1] * length,
+      offsetVec[2] + axisVec[2] * length,
     ),
-    [dValue, axisVec, offsetVec],
+    [length, axisVec, offsetVec],
   );
 
   const arrowBase = useMemo(
@@ -86,43 +85,39 @@ export default function DOffsetArrow({ dValue, jointIndex, rotationAxis, jointTy
 
   const tipQuaternion = useMemo(() => {
     const q = new THREE.Quaternion();
-    const dir = dValue > 0 ? axisDir.clone() : axisDir.clone().negate();
+    const dir = length > 0 ? axisDir.clone() : axisDir.clone().negate();
     q.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     return q;
-  }, [dValue, axisDir]);
+  }, [length, axisDir]);
 
   const baseQuaternion = useMemo(() => {
     const q = new THREE.Quaternion();
-    const dir = dValue > 0 ? axisDir.clone().negate() : axisDir.clone();
+    const dir = length > 0 ? axisDir.clone().negate() : axisDir.clone();
     q.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     return q;
-  }, [dValue, axisDir]);
-
-  const paramLabel = jointType === "prismatic" ? "d" : "d";
+  }, [length, axisDir]);
 
   return (
     <group>
       <Line
         points={linePoints}
-        color="#67e8f9"
+        color="#2dd4bf"
         lineWidth={1.5}
         dashed
         dashSize={0.05}
         gapSize={0.03}
       />
-      {/* Arrow at end */}
       <mesh position={arrowTip} quaternion={tipQuaternion}>
         <coneGeometry args={[0.02, 0.06, 8]} />
-        <meshBasicMaterial color="#67e8f9" />
+        <meshBasicMaterial color="#2dd4bf" />
       </mesh>
-      {/* Arrow at start */}
       <mesh position={arrowBase} quaternion={baseQuaternion}>
         <coneGeometry args={[0.02, 0.06, 8]} />
-        <meshBasicMaterial color="#67e8f9" />
+        <meshBasicMaterial color="#2dd4bf" />
       </mesh>
       <Html position={labelPosition} center style={{ pointerEvents: "none" }}>
         <div style={labelStyle}>
-          {paramLabel}<sub>{jointIndex + 1}</sub> = {dValue.toFixed(2)}
+          L<sub>{linkIndex + 1}</sub> = {Math.abs(length).toFixed(2)}
         </div>
       </Html>
     </group>

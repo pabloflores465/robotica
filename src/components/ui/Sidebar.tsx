@@ -1,13 +1,15 @@
 import { useRobotStore } from "../../store/robotStore";
 import BaseFrameControls from "./BaseFrameControls";
 import DHParameterForm from "./DHParameterForm";
+import LinkForm from "./LinkForm";
 import DHTable from "./DHTable";
 import JointSliders from "./JointSliders";
 import TransformPanel from "./TransformPanel";
 
 export default function Sidebar() {
-  const joints = useRobotStore((s) => s.joints);
-  const clearJoints = useRobotStore((s) => s.clearJoints);
+  const elements = useRobotStore((s) => s.elements);
+  const clearAll = useRobotStore((s) => s.clearAll);
+  const hasJoints = elements.some((el) => el.elementKind === "joint");
 
   return (
     <aside className="w-[400px] h-screen flex flex-col bg-gray-950 text-gray-100 border-r border-gray-800">
@@ -16,9 +18,9 @@ export default function Sidebar() {
         <h1 className="text-base font-bold text-white tracking-tight">
           DH Kinematics
         </h1>
-        {joints.length > 0 && (
+        {elements.length > 0 && (
           <button
-            onClick={clearJoints}
+            onClick={clearAll}
             className="text-xs text-red-400/80 hover:text-red-300 px-2 py-1 rounded hover:bg-red-400/10 transition-all"
           >
             Clear All
@@ -36,17 +38,21 @@ export default function Sidebar() {
           <DHParameterForm />
         </Section>
 
-        <Section title="Parameters" defaultOpen badge={joints.length > 0 ? `${joints.length}` : undefined}>
+        <Section title="L" defaultOpen>
+          <LinkForm />
+        </Section>
+
+        <Section title="Parameters" defaultOpen badge={elements.length > 0 ? `${elements.length}` : undefined}>
           <DHTable />
         </Section>
 
-        {joints.length > 0 && (
+        {hasJoints && (
           <Section title="Joint Controls" defaultOpen>
             <JointSliders />
           </Section>
         )}
 
-        {joints.length > 0 && (
+        {elements.length > 0 && (
           <Section title="Transforms">
             <TransformPanel />
           </Section>

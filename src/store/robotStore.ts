@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Joint, JointType, DHParameters, RotationAxis } from "../core/types/robot";
+import type { Joint, JointType, DHParameters, RotationAxis, LinkDirection } from "../core/types/robot";
 import {
   computeForwardKinematics,
   type ForwardKinematicsResult,
@@ -14,8 +14,17 @@ export interface BaseRotation {
   z: number;
 }
 
+const DIRECTION_MAP: Record<LinkDirection, { axis: RotationAxis; sign: 1 | -1 }> = {
+  "+x": { axis: "x", sign: 1 },
+  "-x": { axis: "x", sign: -1 },
+  "+y": { axis: "y", sign: 1 },
+  "-y": { axis: "y", sign: -1 },
+  "+z": { axis: "z", sign: 1 },
+  "-z": { axis: "z", sign: -1 },
+};
+
 interface RobotState {
-  joints: Joint[];
+  elements: Joint[];
   kinematics: ForwardKinematicsResult;
   baseRotation: BaseRotation;
   /** Base matrix computed from baseRotation (cached) */
@@ -28,7 +37,12 @@ interface RobotState {
     frameAngle?: number,
     name?: string,
   ) => void;
-  removeJoint: (id: string) => void;
+  addLink: (
+    direction: LinkDirection,
+    length: number,
+    name?: string,
+  ) => void;
+  removeElement: (id: string) => void;
   updateJointDHParam: (
     id: string,
     param: keyof DHParameters,
@@ -39,8 +53,10 @@ interface RobotState {
   updateJointType: (id: string, type: JointType) => void;
   updateJointRotationAxis: (id: string, axis: RotationAxis) => void;
   updateJointFrameAngle: (id: string, angle: number) => void;
+  updateLinkLength: (id: string, length: number) => void;
+  updateLinkDirection: (id: string, direction: LinkDirection) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
-  clearJoints: () => void;
+  clearAll: () => void;
 }
 
 function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
@@ -51,21 +67,22 @@ function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
   return multiplyMatrices(multiplyMatrices(rx, ry), rz);
 }
 
-function recompute(joints: Joint[], baseMat: Matrix4x4): ForwardKinematicsResult {
-  if (joints.length === 0) {
+function recompute(elements: Joint[], baseMat: Matrix4x4): ForwardKinematicsResult {
+  if (elements.length === 0) {
     return {
       individualMatrices: [],
       cumulativeMatrices: [],
       endEffectorTransform: identity4(),
     };
   }
-  return computeForwardKinematics(joints, baseMat);
+  return computeForwardKinematics(elements, baseMat);
 }
 
 let jointCounter = 0;
+let linkCounter = 0;
 
 export const useRobotStore = create<RobotState>((set) => ({
-  joints: [],
+  elements: [],
   kinematics: {
     individualMatrices: [],
     cumulativeMatrices: [],
@@ -79,11 +96,12 @@ export const useRobotStore = create<RobotState>((set) => ({
     const newJoint: Joint = {
       id: crypto.randomUUID(),
       name: name ?? `Joint ${jointCounter}`,
+      elementKind: "joint",
       type,
       dhParams: {
         theta: dhParams?.theta ?? 0,
         d: dhParams?.d ?? 0,
-        a: dhParams?.a ?? 1,
+        a: dhParams?.a ?? 0,
         alpha: dhParams?.alpha ?? 0,
       },
       rotationAxis: rotationAxis ?? "z",
@@ -93,79 +111,127 @@ export const useRobotStore = create<RobotState>((set) => ({
       maxLimit: type === "revolute" ? Math.PI : 2,
     };
     set((state) => {
-      const joints = [...state.joints, newJoint];
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      const elements = [...state.elements, newJoint];
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
-  removeJoint: (id) => {
+  addLink: (direction, length, name) => {
+    linkCounter++;
+    const { axis, sign } = DIRECTION_MAP[direction];
+    const newLink: Joint = {
+      id: crypto.randomUUID(),
+      name: name ?? `Link ${linkCounter}`,
+      elementKind: "link",
+      type: "revolute",
+      dhParams: { theta: 0, d: sign * length, a: 0, alpha: 0 },
+      rotationAxis: axis,
+      frameAngle: 0,
+      variableValue: 0,
+      minLimit: 0,
+      maxLimit: 0,
+    };
     set((state) => {
-      const joints = state.joints.filter((j) => j.id !== id);
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      const elements = [...state.elements, newLink];
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    });
+  },
+
+  removeElement: (id) => {
+    set((state) => {
+      const elements = state.elements.filter((el) => el.id !== id);
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
   updateJointDHParam: (id, param, value) => {
     set((state) => {
-      const joints = state.joints.map((j) =>
-        j.id === id
-          ? { ...j, dhParams: { ...j.dhParams, [param]: value } }
-          : j,
+      const elements = state.elements.map((el) =>
+        el.id === id
+          ? { ...el, dhParams: { ...el.dhParams, [param]: value } }
+          : el,
       );
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
   updateJointVariable: (id, value) => {
     set((state) => {
-      const joints = state.joints.map((j) =>
-        j.id === id ? { ...j, variableValue: value } : j,
+      const elements = state.elements.map((el) =>
+        el.id === id ? { ...el, variableValue: value } : el,
       );
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
   updateJointLimits: (id, min, max) => {
     set((state) => {
-      const joints = state.joints.map((j) =>
-        j.id === id ? { ...j, minLimit: min, maxLimit: max } : j,
+      const elements = state.elements.map((el) =>
+        el.id === id ? { ...el, minLimit: min, maxLimit: max } : el,
       );
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
   updateJointType: (id, type) => {
     set((state) => {
-      const joints = state.joints.map((j) =>
-        j.id === id
+      const elements = state.elements.map((el) =>
+        el.id === id
           ? {
-              ...j,
+              ...el,
               type,
               minLimit: type === "revolute" ? -Math.PI : -2,
               maxLimit: type === "revolute" ? Math.PI : 2,
               variableValue: 0,
             }
-          : j,
+          : el,
       );
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
   updateJointRotationAxis: (id, axis) => {
     set((state) => {
-      const joints = state.joints.map((j) =>
-        j.id === id ? { ...j, rotationAxis: axis } : j,
+      const elements = state.elements.map((el) =>
+        el.id === id ? { ...el, rotationAxis: axis } : el,
       );
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
   updateJointFrameAngle: (id, angle) => {
     set((state) => {
-      const joints = state.joints.map((j) =>
-        j.id === id ? { ...j, frameAngle: angle } : j,
+      const elements = state.elements.map((el) =>
+        el.id === id ? { ...el, frameAngle: angle } : el,
       );
-      return { joints, kinematics: recompute(joints, state.baseMatrix) };
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    });
+  },
+
+  updateLinkLength: (id, length) => {
+    set((state) => {
+      const elements = state.elements.map((el) => {
+        if (el.id !== id || el.elementKind !== "link") return el;
+        const sign = el.dhParams.d >= 0 ? 1 : -1;
+        return { ...el, dhParams: { ...el.dhParams, d: sign * Math.abs(length) } };
+      });
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    });
+  },
+
+  updateLinkDirection: (id, direction) => {
+    set((state) => {
+      const { axis, sign } = DIRECTION_MAP[direction];
+      const elements = state.elements.map((el) => {
+        if (el.id !== id || el.elementKind !== "link") return el;
+        const absLength = Math.abs(el.dhParams.d);
+        return {
+          ...el,
+          rotationAxis: axis,
+          dhParams: { ...el.dhParams, d: sign * absLength },
+        };
+      });
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
 
@@ -174,14 +240,15 @@ export const useRobotStore = create<RobotState>((set) => ({
     set((state) => ({
       baseRotation: rotation,
       baseMatrix: baseMat,
-      kinematics: recompute(state.joints, baseMat),
+      kinematics: recompute(state.elements, baseMat),
     }));
   },
 
-  clearJoints: () => {
+  clearAll: () => {
     jointCounter = 0;
+    linkCounter = 0;
     set({
-      joints: [],
+      elements: [],
       kinematics: {
         individualMatrices: [],
         cumulativeMatrices: [],

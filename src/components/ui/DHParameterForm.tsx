@@ -4,106 +4,14 @@ import type { JointType, RotationAxis } from "../../core/types/robot";
 
 const DEG_TO_RAD = Math.PI / 180;
 
-type DirectionPreset = "+x" | "-x" | "+y" | "-y" | "+z" | "-z" | "custom";
-
-interface PresetConfig {
-  label: string;
-  description: string;
-  axis: "x" | "y" | "z";
-  thetaDeg: number;
-  d: number;
-  a: number;
-  alphaDeg: number;
-}
-
-const DIRECTION_PRESETS: Record<Exclude<DirectionPreset, "custom">, PresetConfig> = {
-  "+x": {
-    label: "+X",
-    description: "a=1, extends along +X",
-    axis: "x",
-    thetaDeg: 0,
-    d: 0,
-    a: 1,
-    alphaDeg: 0,
-  },
-  "-x": {
-    label: "-X",
-    description: "theta=180, a=1, extends along -X",
-    axis: "x",
-    thetaDeg: 180,
-    d: 0,
-    a: 1,
-    alphaDeg: 0,
-  },
-  "+y": {
-    label: "+Y",
-    description: "theta=90, a=1, extends along +Y",
-    axis: "y",
-    thetaDeg: 90,
-    d: 0,
-    a: 1,
-    alphaDeg: 0,
-  },
-  "-y": {
-    label: "-Y",
-    description: "theta=-90, a=1, extends along -Y",
-    axis: "y",
-    thetaDeg: -90,
-    d: 0,
-    a: 1,
-    alphaDeg: 0,
-  },
-  "+z": {
-    label: "+Z",
-    description: "extends along +Z",
-    axis: "z",
-    thetaDeg: 0,
-    d: 0,
-    a: 0,
-    alphaDeg: 0,
-  },
-  "-z": {
-    label: "-Z",
-    description: "extends along -Z",
-    axis: "z",
-    thetaDeg: 0,
-    d: 0,
-    a: 0,
-    alphaDeg: 0,
-  },
-};
-
-const AXIS_COLORS: Record<string, { active: string; inactive: string }> = {
-  x: { active: "bg-red-600 text-white ring-1 ring-red-400", inactive: "bg-gray-800/80 text-red-400 hover:bg-gray-700" },
-  y: { active: "bg-green-600 text-white ring-1 ring-green-400", inactive: "bg-gray-800/80 text-green-400 hover:bg-gray-700" },
-  z: { active: "bg-blue-600 text-white ring-1 ring-blue-400", inactive: "bg-gray-800/80 text-blue-400 hover:bg-gray-700" },
-};
-
 export default function DHParameterForm() {
   const addJoint = useRobotStore((s) => s.addJoint);
 
   const [type, setType] = useState<JointType>("revolute");
-  const [direction, setDirection] = useState<DirectionPreset>("+z");
   const [thetaDeg, setThetaDeg] = useState(0);
-  const [d, setD] = useState(0);
-  const [a, setA] = useState(0);
   const [alphaDeg, setAlphaDeg] = useState(0);
   const [rotationAxis, setRotationAxis] = useState<RotationAxis>("z");
   const [frameAngleDeg, setFrameAngleDeg] = useState(0);
-
-  function applyPreset(preset: Exclude<DirectionPreset, "custom">) {
-    const config = DIRECTION_PRESETS[preset];
-    setDirection(preset);
-    setThetaDeg(config.thetaDeg);
-    setD(config.d);
-    setA(config.a);
-    setAlphaDeg(config.alphaDeg);
-  }
-
-  function handleManualChange(setter: (v: number) => void, value: number) {
-    setter(value);
-    setDirection("custom");
-  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -111,8 +19,8 @@ export default function DHParameterForm() {
       type,
       {
         theta: thetaDeg * DEG_TO_RAD,
-        d,
-        a,
+        d: 0,
+        a: 0,
         alpha: alphaDeg * DEG_TO_RAD,
       },
       rotationAxis,
@@ -122,7 +30,6 @@ export default function DHParameterForm() {
 
   const isVariable = (param: string) => {
     if (type === "revolute" && param === "theta") return true;
-    if (type === "prismatic" && param === "d") return true;
     return false;
   };
 
@@ -154,109 +61,61 @@ export default function DHParameterForm() {
         </button>
       </div>
 
-      {/* Direction presets */}
-      <div>
-        <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
-          Direction
-        </label>
-        <div className="grid grid-cols-3 gap-1">
-          {(Object.entries(DIRECTION_PRESETS) as [Exclude<DirectionPreset, "custom">, PresetConfig][]).map(
-            ([key, config]) => {
-              const colors = AXIS_COLORS[config.axis];
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => applyPreset(key)}
-                  className={`px-2 py-1.5 rounded-md text-xs font-bold transition-all text-center ${
-                    direction === key
-                      ? colors?.active
-                      : colors?.inactive
-                  }`}
-                  title={config.description}
-                >
-                  {config.label}
-                </button>
-              );
-            },
-          )}
-          <button
-            type="button"
-            onClick={() => setDirection("custom")}
-            className={`col-span-3 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
-              direction === "custom"
-                ? "bg-indigo-600 text-white ring-1 ring-indigo-400"
-                : "bg-gray-800/80 text-gray-400 hover:bg-gray-700"
-            }`}
-          >
-            Custom
-          </button>
-        </div>
-      </div>
-
       {/* DH Parameters */}
       <div>
         <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
           DH Parameters
         </label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
           <ParamInput
             label="theta"
             unit="deg"
             value={thetaDeg}
-            onChange={(v) => handleManualChange(setThetaDeg, v)}
+            onChange={setThetaDeg}
             variable={isVariable("theta")}
             varColor="text-amber-400"
-          />
-          <ParamInput
-            label="L"
-            unit="offset"
-            value={d}
-            onChange={(v) => handleManualChange(setD, v)}
           />
           <ParamInput
             label="alpha"
             unit="deg"
             value={alphaDeg}
-            onChange={(v) => handleManualChange(setAlphaDeg, v)}
+            onChange={setAlphaDeg}
           />
         </div>
-        {type === "revolute" && (
-          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] text-gray-500">axis:</span>
-            {(["x", "y", "z"] as const).map((axis) => {
-              const colors: Record<string, string> = {
-                x: "text-red-400 bg-red-500/15",
-                y: "text-green-400 bg-green-500/15",
-                z: "text-blue-400 bg-blue-500/15",
-              };
-              return (
-                <button
-                  key={axis}
-                  type="button"
-                  onClick={() => setRotationAxis(axis)}
-                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all ${
-                    rotationAxis === axis
-                      ? colors[axis]
-                      : "text-gray-500 hover:text-gray-300"
-                  }`}
-                >
-                  {axis.toUpperCase()}
-                </button>
-              );
-            })}
-            <span className="text-[10px] text-gray-600 mx-1">|</span>
-            <span className="text-[10px] text-gray-500">frame:</span>
-            <input
-              type="number"
-              step="any"
-              value={frameAngleDeg}
-              onChange={(e) => setFrameAngleDeg(Number(e.target.value))}
-              className="w-14 bg-gray-800/80 border border-gray-700 rounded px-1.5 py-0.5 text-[10px] text-gray-200 font-mono focus:outline-none focus:border-indigo-500 transition-all"
-            />
-            <span className="text-[10px] text-gray-600">deg</span>
-          </div>
-        )}
+        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-gray-500">axis:</span>
+          {(["x", "y", "z"] as const).map((axis) => {
+            const colors: Record<string, string> = {
+              x: "text-red-400 bg-red-500/15",
+              y: "text-green-400 bg-green-500/15",
+              z: "text-blue-400 bg-blue-500/15",
+            };
+            return (
+              <button
+                key={axis}
+                type="button"
+                onClick={() => setRotationAxis(axis)}
+                className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all ${
+                  rotationAxis === axis
+                    ? colors[axis]
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {axis.toUpperCase()}
+              </button>
+            );
+          })}
+          <span className="text-[10px] text-gray-600 mx-1">|</span>
+          <span className="text-[10px] text-gray-500">frame:</span>
+          <input
+            type="number"
+            step="any"
+            value={frameAngleDeg}
+            onChange={(e) => setFrameAngleDeg(Number(e.target.value))}
+            className="w-14 bg-gray-800/80 border border-gray-700 rounded px-1.5 py-0.5 text-[10px] text-gray-200 font-mono focus:outline-none focus:border-indigo-500 transition-all"
+          />
+          <span className="text-[10px] text-gray-600">deg</span>
+        </div>
         {type === "prismatic" && (
           <div className="mt-1.5 flex items-center gap-1.5">
             <span className="text-[10px] text-gray-500">variable:</span>

@@ -47,6 +47,20 @@ describe("computeDHMatrix", () => {
     expect(m[0]![3]).toBeCloseTo(2); // a*cos(0) = 2
     expect(m[1]![3]).toBeCloseTo(0); // a*sin(0) = 0
   });
+
+  it("x-axis: d translates along x", () => {
+    const m = computeDHMatrix({ theta: 0, d: 1.5, a: 0, alpha: 0 }, "x");
+    expect(m[0]![3]).toBeCloseTo(1.5); // d along x
+    expect(m[1]![3]).toBeCloseTo(0);
+    expect(m[2]![3]).toBeCloseTo(0);
+  });
+
+  it("y-axis: d translates along y", () => {
+    const m = computeDHMatrix({ theta: 0, d: 2.0, a: 0, alpha: 0 }, "y");
+    expect(m[0]![3]).toBeCloseTo(0);
+    expect(m[1]![3]).toBeCloseTo(2.0); // d along y
+    expect(m[2]![3]).toBeCloseTo(0);
+  });
 });
 
 describe("getEffectiveDHParams", () => {
@@ -54,8 +68,11 @@ describe("getEffectiveDHParams", () => {
     const joint: Joint = {
       id: "test",
       name: "Test",
+      elementKind: "joint",
       type: "revolute",
       dhParams: { theta: 0, d: 0, a: 1, alpha: 0 },
+      rotationAxis: "z",
+      frameAngle: 0,
       variableValue: Math.PI / 4,
       minLimit: -Math.PI,
       maxLimit: Math.PI,
@@ -69,8 +86,11 @@ describe("getEffectiveDHParams", () => {
     const joint: Joint = {
       id: "test",
       name: "Test",
+      elementKind: "joint",
       type: "prismatic",
       dhParams: { theta: 0, d: 0.5, a: 1, alpha: 0 },
+      rotationAxis: "z",
+      frameAngle: 0,
       variableValue: 1.0,
       minLimit: -2,
       maxLimit: 2,

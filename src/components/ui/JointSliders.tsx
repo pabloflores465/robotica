@@ -5,14 +5,18 @@ const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
 export default function JointSliders() {
-  const joints = useRobotStore((s) => s.joints);
+  const elements = useRobotStore((s) => s.elements);
   const updateJointVariable = useRobotStore((s) => s.updateJointVariable);
 
-  if (joints.length === 0) return null;
+  const jointElements = elements
+    .map((el, globalIndex) => ({ element: el, globalIndex }))
+    .filter(({ element }) => element.elementKind === "joint");
+
+  if (jointElements.length === 0) return null;
 
   return (
     <div className="space-y-3">
-      {joints.map((joint, i) => {
+      {jointElements.map(({ element: joint, globalIndex }) => {
         const isRevolute = joint.type === "revolute";
         const displayValue = isRevolute
           ? joint.variableValue * RAD_TO_DEG
@@ -34,7 +38,7 @@ export default function JointSliders() {
                   {isRevolute ? "R" : "P"}
                 </span>
                 <span className="text-xs text-gray-300 font-medium">
-                  Joint {i + 1}
+                  Joint {globalIndex + 1}
                 </span>
                 <span className="text-[10px] text-gray-500 font-mono">
                   ({paramName})

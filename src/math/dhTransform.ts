@@ -22,11 +22,12 @@ export function getEffectiveDHParams(joint: Joint): DHParameters {
  * Computes the 4x4 homogeneous transformation matrix for a single
  * set of DH parameters.
  *
- * R(axis, theta) * Tz(d) * Tx(a) * Rx(alpha)
+ * R(axis, theta) * T(axis, d) * Tx(a) * Rx(alpha)
  *
- * axis = 'z': standard DH (Rz)
- * axis = 'x': Rx
- * axis = 'y': Ry
+ * d translates along the rotation axis (distance from origin).
+ * axis = 'z': Rz(theta) * Tz(d) (standard DH)
+ * axis = 'x': Rx(theta) * Tx(d)
+ * axis = 'y': Ry(theta) * Ty(d)
  */
 export function computeDHMatrix(
   params: DHParameters,
@@ -39,23 +40,25 @@ export function computeDHMatrix(
   const sa = Math.sin(alpha);
 
   if (rotationAxis === "x") {
-    // Rx(theta) * Tz(d) * Tx(a) * Rx(alpha)
+    // Rx(theta) * Tx(d) * Tx(a) * Rx(alpha)
+    // d translates along the rotation axis (x)
     const cta = Math.cos(theta + alpha);
     const sta = Math.sin(theta + alpha);
     return [
-      [1, 0, 0, a],
-      [0, cta, -sta, -d * st],
-      [0, sta, cta, d * ct],
+      [1, 0, 0, d + a],
+      [0, cta, -sta, 0],
+      [0, sta, cta, 0],
       [0, 0, 0, 1],
     ];
   }
 
   if (rotationAxis === "y") {
-    // Ry(theta) * Tz(d) * Tx(a) * Rx(alpha)
+    // Ry(theta) * Ty(d) * Tx(a) * Rx(alpha)
+    // d translates along the rotation axis (y)
     return [
-      [ct, st * sa, st * ca, ct * a + st * d],
-      [0, ca, -sa, 0],
-      [-st, ct * sa, ct * ca, -st * a + ct * d],
+      [ct, st * sa, st * ca, ct * a],
+      [0, ca, -sa, d],
+      [-st, ct * sa, ct * ca, -st * a],
       [0, 0, 0, 1],
     ];
   }

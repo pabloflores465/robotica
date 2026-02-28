@@ -8,12 +8,13 @@ import {
 } from "../../math/matrixOps";
 import { getEffectiveDHParams } from "../../math/dhTransform";
 import type { Matrix4x4 } from "../../core/types/matrix";
-import type { Joint, RotationAxis } from "../../core/types/robot";
+import type { Joint, JointType, RotationAxis } from "../../core/types/robot";
 import CoordinateFrame from "./CoordinateFrame";
 import JointMesh from "./JointMesh";
 import LinkMesh from "./LinkMesh";
 import ThetaArc from "./ThetaArc";
 import DOffsetArrow from "./DOffsetArrow";
+import LinkLengthLabel from "./LinkLengthLabel";
 
 interface JointGroupProps {
   matrix: Matrix4x4;
@@ -45,9 +46,10 @@ interface DHAnnotationGroupProps {
   d: number;
   jointIndex: number;
   rotationAxis: RotationAxis;
+  jointType: JointType;
 }
 
-function DHAnnotationGroup({ matrix, theta, d, jointIndex, rotationAxis }: DHAnnotationGroupProps) {
+function DHAnnotationGroup({ matrix, theta, d, jointIndex, rotationAxis, jointType }: DHAnnotationGroupProps) {
   const groupRef = useRef<THREE.Group>(null);
   const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
 
@@ -61,7 +63,32 @@ function DHAnnotationGroup({ matrix, theta, d, jointIndex, rotationAxis }: DHAnn
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
       <ThetaArc angle={theta} jointIndex={jointIndex} rotationAxis={rotationAxis} />
-      <DOffsetArrow dValue={d} jointIndex={jointIndex} />
+      <DOffsetArrow dValue={d} jointIndex={jointIndex} rotationAxis={rotationAxis} jointType={jointType} />
+    </group>
+  );
+}
+
+interface LinkAnnotationGroupProps {
+  matrix: Matrix4x4;
+  length: number;
+  linkIndex: number;
+  rotationAxis: RotationAxis;
+}
+
+function LinkAnnotationGroup({ matrix, length, linkIndex, rotationAxis }: LinkAnnotationGroupProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.matrix.copy(threeMatrix);
+      groupRef.current.matrixWorldNeedsUpdate = true;
+    }
+  }, [threeMatrix]);
+
+  return (
+    <group ref={groupRef} matrixAutoUpdate={false}>
+      <LinkLengthLabel length={length} linkIndex={linkIndex} rotationAxis={rotationAxis} />
     </group>
   );
 }
@@ -74,7 +101,7 @@ interface LinkData {
 
 
 export default function RobotArm() {
-  const joints = useRobotStore((s) => s.joints);
+  const elements = useRobotStore((s) => s.elements);
   const kinematics = useRobotStore((s) => s.kinematics);
   const baseMatrix = useRobotStore((s) => s.baseMatrix);
 
@@ -88,10 +115,10 @@ export default function RobotArm() {
           ? baseOrigin
           : getPositionFromMatrix(kinematics.cumulativeMatrices[i - 1]!);
       const currPos = getPositionFromMatrix(kinematics.cumulativeMatrices[i]!);
-      const joint = joints[i];
-      if (joint) {
+      const element = elements[i];
+      if (element) {
         result.push({
-          key: `link-${joint.id}`,
+          key: `link-${element.id}`,
           start: prevPos,
           end: currPos,
         });
@@ -99,40 +126,58 @@ export default function RobotArm() {
     }
 
     return result;
-  }, [joints, kinematics.cumulativeMatrices]);
+  }, [elements, kinematics.cumulativeMatrices]);
 
   // End effector position for the "ghost" frame
   const endEffectorMatrix = kinematics.endEffectorTransform;
   const hasEndEffector =
-    joints.length > 0 &&
+    elements.length > 0 &&
     endEffectorMatrix !== identity4();
 
   return (
     <group>
-      {/* Joint coordinate frames */}
-      {joints.map((joint, i) => {
+      {/* Joint coordinate frames -- only for actual joints, not links */}
+      {elements.map((element, i) => {
+        if (element.elementKind !== "joint") return null;
         const matrix = kinematics.cumulativeMatrices[i];
         if (!matrix) return null;
-        return <JointGroup key={joint.id} matrix={matrix} joint={joint} />;
+        return <JointGroup key={element.id} matrix={matrix} joint={element} />;
       })}
 
-      {/* DH parameter annotations (theta arcs and d arrows) */}
-      {joints.map((joint, i) => {
+      {/* DH parameter annotations -- only for actual joints */}
+      {elements.map((element, i) => {
+        if (element.elementKind !== "joint") return null;
         const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
-        const effective = getEffectiveDHParams(joint);
+        const effective = getEffectiveDHParams(element);
         return (
           <DHAnnotationGroup
-            key={`dh-ann-${joint.id}`}
+            key={`dh-ann-${element.id}`}
             matrix={prevMatrix}
             theta={effective.theta}
             d={effective.d}
             jointIndex={i}
-            rotationAxis={joint.rotationAxis}
+            rotationAxis={element.rotationAxis}
+            jointType={element.type}
           />
         );
       })}
 
-      {/* Links between joints */}
+      {/* Link length annotations -- only for link elements */}
+      {elements.map((element, i) => {
+        if (element.elementKind !== "link") return null;
+        const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
+        return (
+          <LinkAnnotationGroup
+            key={`link-ann-${element.id}`}
+            matrix={prevMatrix}
+            length={element.dhParams.d}
+            linkIndex={i}
+            rotationAxis={element.rotationAxis}
+          />
+        );
+      })}
+
+      {/* Links between all elements */}
       {links.map((link) => (
         <group key={link.key}>
           <LinkMesh start={link.start} end={link.end} />

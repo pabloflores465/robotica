@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeForwardKinematics } from "../forwardKinematics";
-import type { Joint } from "../../core/types/robot";
+import type { Joint, RotationAxis } from "../../core/types/robot";
 
 function makeRevoluteJoint(
   a: number,
@@ -12,8 +12,11 @@ function makeRevoluteJoint(
   return {
     id: crypto.randomUUID(),
     name: "Joint",
+    elementKind: "joint",
     type: "revolute",
     dhParams: { theta, d, a, alpha },
+    rotationAxis: "z",
+    frameAngle: 0,
     variableValue,
     minLimit: -Math.PI,
     maxLimit: Math.PI,
@@ -29,11 +32,41 @@ function makePrismaticJoint(
   return {
     id: crypto.randomUUID(),
     name: "Joint",
+    elementKind: "joint",
     type: "prismatic",
     dhParams: { theta: 0, d, a, alpha },
+    rotationAxis: "z",
+    frameAngle: 0,
     variableValue,
     minLimit: -5,
     maxLimit: 5,
+  };
+}
+
+function makeLinkElement(
+  direction: "+x" | "-x" | "+y" | "-y" | "+z" | "-z",
+  length: number,
+): Joint {
+  const map: Record<string, { axis: RotationAxis; sign: 1 | -1 }> = {
+    "+x": { axis: "x", sign: 1 },
+    "-x": { axis: "x", sign: -1 },
+    "+y": { axis: "y", sign: 1 },
+    "-y": { axis: "y", sign: -1 },
+    "+z": { axis: "z", sign: 1 },
+    "-z": { axis: "z", sign: -1 },
+  };
+  const { axis, sign } = map[direction]!;
+  return {
+    id: crypto.randomUUID(),
+    name: "Link",
+    elementKind: "link",
+    type: "revolute",
+    dhParams: { theta: 0, d: sign * length, a: 0, alpha: 0 },
+    rotationAxis: axis,
+    frameAngle: 0,
+    variableValue: 0,
+    minLimit: 0,
+    maxLimit: 0,
   };
 }
 
@@ -63,8 +96,6 @@ describe("computeForwardKinematics", () => {
     ];
     const result = computeForwardKinematics(joints);
     const ee = result.endEffectorTransform;
-    // Joint 1 rotates 90deg: places joint 2 origin at (0, 1, 0)
-    // Joint 2 has a=1, inheriting the rotation, extends to (0, 2, 0)
     expect(ee[0]![3]).toBeCloseTo(0); // x
     expect(ee[1]![3]).toBeCloseTo(2); // y
     expect(ee[2]![3]).toBeCloseTo(0); // z
@@ -77,8 +108,8 @@ describe("computeForwardKinematics", () => {
     ];
     const result = computeForwardKinematics(joints);
     const ee = result.endEffectorTransform;
-    expect(ee[0]![3]).toBeCloseTo(1); // x = a1*cos(0) + a2*cos(90) = 1 + 0
-    expect(ee[1]![3]).toBeCloseTo(1); // y = a1*sin(0) + a2*sin(90) = 0 + 1
+    expect(ee[0]![3]).toBeCloseTo(1); // x
+    expect(ee[1]![3]).toBeCloseTo(1); // y
     expect(ee[2]![3]).toBeCloseTo(0); // z
   });
 
@@ -95,11 +126,6 @@ describe("computeForwardKinematics", () => {
     const joints = [makeRevoluteJoint(1, 0, 0, Math.PI / 2)];
     const result = computeForwardKinematics(joints);
     const ee = result.endEffectorTransform;
-    // After alpha=90deg twist:
-    // Column 2 (z-axis of frame 1) should be [0, -1, 0] in base frame?
-    // Actually: Row 2 of DH matrix with alpha=90: [0, sin(alpha), cos(alpha), d]
-    // = [0, 1, 0, 0]
-    // The z-axis of the new frame (column 2) should reflect the twist
     expect(ee[2]![1]).toBeCloseTo(1); // sin(alpha)
     expect(ee[2]![2]).toBeCloseTo(0); // cos(alpha)
   });
@@ -113,5 +139,38 @@ describe("computeForwardKinematics", () => {
     const result = computeForwardKinematics(joints);
     expect(result.individualMatrices).toHaveLength(3);
     expect(result.cumulativeMatrices).toHaveLength(3);
+  });
+
+  it("link +X produces pure translation along x", () => {
+    const result = computeForwardKinematics([makeLinkElement("+x", 1.5)]);
+    const ee = result.endEffectorTransform;
+    expect(ee[0]![3]).toBeCloseTo(1.5);
+    expect(ee[1]![3]).toBeCloseTo(0);
+    expect(ee[2]![3]).toBeCloseTo(0);
+    // Rotation block should be identity
+    expect(ee[0]![0]).toBeCloseTo(1);
+    expect(ee[1]![1]).toBeCloseTo(1);
+    expect(ee[2]![2]).toBeCloseTo(1);
+  });
+
+  it("link -Z produces pure translation along -z", () => {
+    const result = computeForwardKinematics([makeLinkElement("-z", 0.5)]);
+    const ee = result.endEffectorTransform;
+    expect(ee[0]![3]).toBeCloseTo(0);
+    expect(ee[1]![3]).toBeCloseTo(0);
+    expect(ee[2]![3]).toBeCloseTo(-0.5);
+  });
+
+  it("mixed chain: joint rotation + link translation works correctly", () => {
+    const elements = [
+      makeRevoluteJoint(0, 0, 0, 0, Math.PI / 2), // rotate 90deg about z
+      makeLinkElement("+x", 1.0), // translate +X by 1 (in rotated frame)
+    ];
+    const result = computeForwardKinematics(elements);
+    const ee = result.endEffectorTransform;
+    // After 90deg z-rotation, local +X becomes global +Y
+    expect(ee[0]![3]).toBeCloseTo(0);
+    expect(ee[1]![3]).toBeCloseTo(1.0);
+    expect(ee[2]![3]).toBeCloseTo(0);
   });
 });

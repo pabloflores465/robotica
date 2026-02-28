@@ -3,19 +3,19 @@ import { useRobotStore } from "../../store/robotStore";
 import MatrixDisplay from "./MatrixDisplay";
 
 export default function TransformPanel() {
-  const joints = useRobotStore((s) => s.joints);
+  const elements = useRobotStore((s) => s.elements);
   const kinematics = useRobotStore((s) => s.kinematics);
   const [showIndividual, setShowIndividual] = useState(true);
   const [showCumulative, setShowCumulative] = useState(false);
 
-  if (joints.length === 0) return null;
+  if (elements.length === 0) return null;
 
   return (
     <div className="space-y-3">
       {/* End Effector -- always shown */}
       <MatrixDisplay
         matrix={kinematics.endEffectorTransform}
-        label={`T_0^${joints.length} (End Effector)`}
+        label={`T_0^${elements.length} (End Effector)`}
         highlight
       />
 
@@ -29,9 +29,9 @@ export default function TransformPanel() {
         <div className="space-y-2">
           {kinematics.individualMatrices.map((matrix, i) => (
             <MatrixDisplay
-              key={joints[i]?.id ?? i}
+              key={elements[i]?.id ?? i}
               matrix={matrix}
-              label={`A_${i + 1} (${joints[i]?.name ?? `Joint ${i + 1}`})`}
+              label={`A_${i + 1} (${elements[i]?.name ?? `Element ${i + 1}`})`}
             />
           ))}
         </div>
@@ -47,7 +47,7 @@ export default function TransformPanel() {
         <div className="space-y-2">
           {kinematics.cumulativeMatrices.map((matrix, i) => (
             <MatrixDisplay
-              key={joints[i]?.id ?? i}
+              key={elements[i]?.id ?? i}
               matrix={matrix}
               label={`T_0^${i + 1}`}
             />
