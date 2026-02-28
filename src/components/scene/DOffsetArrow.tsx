@@ -85,7 +85,7 @@ export default function DOffsetArrow({ dValue, jointIndex }: DOffsetArrowProps) 
       </mesh>
       <Html position={labelPosition} center style={{ pointerEvents: "none" }}>
         <div style={labelStyle}>
-          d<sub>{jointIndex + 1}</sub> = {dValue.toFixed(2)}
+          L<sub>{jointIndex + 1}</sub> = {dValue.toFixed(2)}
         </div>
       </Html>
     </group>
