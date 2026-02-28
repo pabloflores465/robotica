@@ -51,16 +51,23 @@ function SceneControls() {
         camera.position.copy(controls.target).add(offset);
         controls.update();
       } else {
-        // Normal trackpad scroll = pan in screen space
+        // Normal trackpad scroll = pan on XY ground plane (Z stays constant)
         const distance = camera.position.distanceTo(controls.target);
         const panSpeed = 0.001 * distance;
 
+        // Get camera right vector, project onto XY plane
         const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
-        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+        right.z = 0;
+        right.normalize();
+
+        // Forward direction on XY plane (for vertical scroll)
+        const forward = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+        forward.z = 0;
+        forward.normalize();
 
         const panOffset = new THREE.Vector3()
           .addScaledVector(right, -e.deltaX * panSpeed)
-          .addScaledVector(up, e.deltaY * panSpeed);
+          .addScaledVector(forward, e.deltaY * panSpeed);
 
         camera.position.add(panOffset);
         controls.target.add(panOffset);

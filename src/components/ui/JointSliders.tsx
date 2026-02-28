@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useRobotStore } from "../../store/robotStore";
 
 const RAD_TO_DEG = 180 / Math.PI;
+const DEG_TO_RAD = Math.PI / 180;
 
 export default function JointSliders() {
   const joints = useRobotStore((s) => s.joints);
@@ -39,9 +41,14 @@ export default function JointSliders() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-200 font-mono tabular-nums">
-                  {displayValue.toFixed(1)}
-                </span>
+                <EditableValue
+                  value={displayValue}
+                  onChange={(v) => {
+                    const raw = isRevolute ? v * DEG_TO_RAD : v;
+                    const clamped = Math.max(joint.minLimit, Math.min(joint.maxLimit, raw));
+                    updateJointVariable(joint.id, clamped);
+                  }}
+                />
                 <span className="text-[10px] text-gray-500">{unit}</span>
                 {joint.variableValue !== 0 && (
                   <button
@@ -72,5 +79,50 @@ export default function JointSliders() {
         );
       })}
     </div>
+  );
+}
+
+function EditableValue({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function startEdit() {
+    setDraft(value.toFixed(1));
+    setEditing(true);
+  }
+
+  function commit() {
+    setEditing(false);
+    const parsed = parseFloat(draft);
+    if (!isNaN(parsed)) {
+      onChange(parsed);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-14 text-xs text-gray-200 font-mono tabular-nums bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-right outline-none focus:border-indigo-500"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={startEdit}
+      className="text-xs text-gray-200 font-mono tabular-nums hover:bg-gray-800 rounded px-1 py-0.5 cursor-text transition-colors"
+      title="Click to edit"
+    >
+      {value.toFixed(1)}
+    </button>
   );
 }
