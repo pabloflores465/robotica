@@ -4,11 +4,12 @@ import type { JointType } from "../../core/types/robot";
 
 const DEG_TO_RAD = Math.PI / 180;
 
-type DirectionPreset = "along-x" | "along-z" | "elbow-up" | "elbow-down" | "custom";
+type DirectionPreset = "+x" | "-x" | "+y" | "-y" | "+z" | "-z" | "custom";
 
 interface PresetConfig {
   label: string;
   description: string;
+  axis: "x" | "y" | "z";
   thetaDeg: number;
   d: number;
   a: number;
@@ -16,45 +17,73 @@ interface PresetConfig {
 }
 
 const DIRECTION_PRESETS: Record<Exclude<DirectionPreset, "custom">, PresetConfig> = {
-  "along-x": {
-    label: "Forward (X)",
-    description: "a=1, extends along X",
+  "+x": {
+    label: "+X",
+    description: "a=1, extends along +X",
+    axis: "x",
     thetaDeg: 0,
     d: 0,
     a: 1,
     alphaDeg: 0,
   },
-  "along-z": {
-    label: "Up (Z)",
-    description: "d=1, extends along Z",
+  "-x": {
+    label: "-X",
+    description: "theta=180, a=1, extends along -X",
+    axis: "x",
+    thetaDeg: 180,
+    d: 0,
+    a: 1,
+    alphaDeg: 0,
+  },
+  "+y": {
+    label: "+Y",
+    description: "theta=90, a=1, extends along +Y",
+    axis: "y",
+    thetaDeg: 90,
+    d: 0,
+    a: 1,
+    alphaDeg: 0,
+  },
+  "-y": {
+    label: "-Y",
+    description: "theta=-90, a=1, extends along -Y",
+    axis: "y",
+    thetaDeg: -90,
+    d: 0,
+    a: 1,
+    alphaDeg: 0,
+  },
+  "+z": {
+    label: "+Z",
+    description: "d=1, extends along +Z",
+    axis: "z",
     thetaDeg: 0,
     d: 1,
     a: 0,
     alphaDeg: 0,
   },
-  "elbow-up": {
-    label: "Elbow Up",
-    description: "a=1, alpha=-90",
+  "-z": {
+    label: "-Z",
+    description: "d=-1, extends along -Z",
+    axis: "z",
     thetaDeg: 0,
-    d: 0,
-    a: 1,
-    alphaDeg: -90,
+    d: -1,
+    a: 0,
+    alphaDeg: 0,
   },
-  "elbow-down": {
-    label: "Elbow Down",
-    description: "a=1, alpha=90",
-    thetaDeg: 0,
-    d: 0,
-    a: 1,
-    alphaDeg: 90,
-  },
+};
+
+const AXIS_COLORS: Record<string, { active: string; inactive: string }> = {
+  x: { active: "bg-red-600 text-white", inactive: "bg-gray-700 text-red-400 hover:bg-gray-600" },
+  y: { active: "bg-green-600 text-white", inactive: "bg-gray-700 text-green-400 hover:bg-gray-600" },
+  z: { active: "bg-blue-600 text-white", inactive: "bg-gray-700 text-blue-400 hover:bg-gray-600" },
 };
 
 export default function DHParameterForm() {
   const addJoint = useRobotStore((s) => s.addJoint);
 
   const [type, setType] = useState<JointType>("revolute");
-  const [direction, setDirection] = useState<DirectionPreset>("along-x");
+  const [direction, setDirection] = useState<DirectionPreset>("+x");
   const [thetaDeg, setThetaDeg] = useState(0);
   const [d, setD] = useState(0);
   const [a, setA] = useState(1);
@@ -125,28 +154,31 @@ export default function DHParameterForm() {
       {/* Direction presets */}
       <div>
         <label className="block text-xs text-gray-400 mb-1">Direction</label>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           {(Object.entries(DIRECTION_PRESETS) as [Exclude<DirectionPreset, "custom">, PresetConfig][]).map(
-            ([key, config]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => applyPreset(key)}
-                className={`px-2 py-1.5 rounded text-xs font-medium transition-colors text-left ${
-                  direction === key
-                    ? "bg-indigo-600 text-white"
-                    : "bg-gray-700 text-gray-400 hover:bg-gray-600"
-                }`}
-                title={config.description}
-              >
-                {config.label}
-              </button>
-            ),
+            ([key, config]) => {
+              const colors = AXIS_COLORS[config.axis];
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => applyPreset(key)}
+                  className={`px-2 py-1.5 rounded text-xs font-bold transition-colors text-center ${
+                    direction === key
+                      ? colors?.active
+                      : colors?.inactive
+                  }`}
+                  title={config.description}
+                >
+                  {config.label}
+                </button>
+              );
+            },
           )}
           <button
             type="button"
             onClick={() => setDirection("custom")}
-            className={`col-span-2 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+            className={`col-span-3 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
               direction === "custom"
                 ? "bg-indigo-600 text-white"
                 : "bg-gray-700 text-gray-400 hover:bg-gray-600"
