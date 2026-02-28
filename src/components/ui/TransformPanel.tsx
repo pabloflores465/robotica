@@ -12,57 +12,82 @@ export default function TransformPanel() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-        Transformation Matrices
-      </h3>
-
       {/* End Effector -- always shown */}
       <MatrixDisplay
         matrix={kinematics.endEffectorTransform}
         label={`T_0^${joints.length} (End Effector)`}
+        highlight
       />
 
       {/* Individual A_i matrices */}
-      <div>
-        <button
-          onClick={() => setShowIndividual(!showIndividual)}
-          className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
-        >
-          {showIndividual ? "[-]" : "[+]"} Individual Matrices (A_i)
-        </button>
-        {showIndividual && (
-          <div className="mt-2 space-y-2">
-            {kinematics.individualMatrices.map((matrix, i) => (
-              <MatrixDisplay
-                key={joints[i]?.id ?? i}
-                matrix={matrix}
-                label={`A_${i + 1} (${joints[i]?.name ?? `Joint ${i + 1}`})`}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <CollapsibleGroup
+        title="Individual Matrices (A_i)"
+        open={showIndividual}
+        onToggle={() => setShowIndividual(!showIndividual)}
+        count={kinematics.individualMatrices.length}
+      >
+        <div className="space-y-2">
+          {kinematics.individualMatrices.map((matrix, i) => (
+            <MatrixDisplay
+              key={joints[i]?.id ?? i}
+              matrix={matrix}
+              label={`A_${i + 1} (${joints[i]?.name ?? `Joint ${i + 1}`})`}
+            />
+          ))}
+        </div>
+      </CollapsibleGroup>
 
       {/* Cumulative T_0^i matrices */}
-      <div>
-        <button
-          onClick={() => setShowCumulative(!showCumulative)}
-          className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
-        >
-          {showCumulative ? "[-]" : "[+]"} Cumulative Matrices (T_0^i)
-        </button>
-        {showCumulative && (
-          <div className="mt-2 space-y-2">
-            {kinematics.cumulativeMatrices.map((matrix, i) => (
-              <MatrixDisplay
-                key={joints[i]?.id ?? i}
-                matrix={matrix}
-                label={`T_0^${i + 1}`}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <CollapsibleGroup
+        title="Cumulative Matrices (T_0^i)"
+        open={showCumulative}
+        onToggle={() => setShowCumulative(!showCumulative)}
+        count={kinematics.cumulativeMatrices.length}
+      >
+        <div className="space-y-2">
+          {kinematics.cumulativeMatrices.map((matrix, i) => (
+            <MatrixDisplay
+              key={joints[i]?.id ?? i}
+              matrix={matrix}
+              label={`T_0^${i + 1}`}
+            />
+          ))}
+        </div>
+      </CollapsibleGroup>
+    </div>
+  );
+}
+
+interface CollapsibleGroupProps {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  count: number;
+  children: React.ReactNode;
+}
+
+function CollapsibleGroup({ title, open, onToggle, count, children }: CollapsibleGroupProps) {
+  return (
+    <div className="rounded-lg border border-gray-800 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="flex items-center justify-between w-full px-3 py-2 bg-gray-800/30 hover:bg-gray-800/50 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <svg
+            className={`w-3 h-3 text-gray-500 transition-transform ${open ? "rotate-90" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-xs text-gray-400 font-medium">{title}</span>
+        </div>
+        <span className="text-[10px] text-gray-600 font-mono">{count}</span>
+      </button>
+      {open && <div className="p-2 space-y-2">{children}</div>}
     </div>
   );
 }
