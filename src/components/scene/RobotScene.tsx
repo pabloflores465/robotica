@@ -19,19 +19,29 @@ function SceneControls() {
     // Browser pinch-to-zoom also sets ctrlKey=true on wheel events,
     // but it does NOT fire keydown, so realCtrl stays false for pinch.
     let realCtrl = false;
+    let realShift = false;
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Control") realCtrl = true;
+      if (e.key === "Shift") realShift = true;
     }
     function onKeyUp(e: KeyboardEvent) {
       if (e.key === "Control") realCtrl = false;
+      if (e.key === "Shift") realShift = false;
     }
 
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const camera = controls.object as THREE.PerspectiveCamera;
 
-      if (realCtrl) {
+      if (realShift) {
+        // Shift + scroll up/down = zoom
+        const factor = 1 + e.deltaY * 0.005;
+        const offset = camera.position.clone().sub(controls.target);
+        offset.multiplyScalar(factor);
+        camera.position.copy(controls.target).add(offset);
+        controls.update();
+      } else if (realCtrl) {
         // Real Ctrl + trackpad scroll = orbit/rotate
         const speed = 0.003;
         const offset = camera.position.clone().sub(controls.target);
