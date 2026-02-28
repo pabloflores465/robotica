@@ -55,19 +55,19 @@ const DIRECTION_PRESETS: Record<Exclude<DirectionPreset, "custom">, PresetConfig
   },
   "+z": {
     label: "+Z",
-    description: "d=1, extends along +Z",
+    description: "extends along +Z",
     axis: "z",
     thetaDeg: 0,
-    d: 1,
+    d: 0,
     a: 0,
     alphaDeg: 0,
   },
   "-z": {
     label: "-Z",
-    description: "d=-1, extends along -Z",
+    description: "extends along -Z",
     axis: "z",
     thetaDeg: 0,
-    d: -1,
+    d: 0,
     a: 0,
     alphaDeg: 0,
   },
@@ -83,10 +83,10 @@ export default function DHParameterForm() {
   const addJoint = useRobotStore((s) => s.addJoint);
 
   const [type, setType] = useState<JointType>("revolute");
-  const [direction, setDirection] = useState<DirectionPreset>("+x");
+  const [direction, setDirection] = useState<DirectionPreset>("+z");
   const [thetaDeg, setThetaDeg] = useState(0);
   const [d, setD] = useState(0);
-  const [a, setA] = useState(1);
+  const [a, setA] = useState(0);
   const [alphaDeg, setAlphaDeg] = useState(0);
   const [rotationAxis, setRotationAxis] = useState<RotationAxis>("z");
   const [frameAngleDeg, setFrameAngleDeg] = useState(0);
