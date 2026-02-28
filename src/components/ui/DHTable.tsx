@@ -1,10 +1,89 @@
+import { useState, useRef, useEffect } from "react";
 import { useRobotStore } from "../../store/robotStore";
+import type { DHParameters } from "../../core/types/robot";
 
 const RAD_TO_DEG = 180 / Math.PI;
+const DEG_TO_RAD = Math.PI / 180;
+
+interface EditableCellProps {
+  value: number;
+  isDegrees: boolean;
+  isVariable: boolean;
+  variableColor: string;
+  onCommit: (value: number) => void;
+}
+
+function EditableCell({ value, isDegrees, isVariable, variableColor, onCommit }: EditableCellProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayValue = isDegrees ? (value * RAD_TO_DEG).toFixed(1) : value.toFixed(2);
+
+  function startEdit() {
+    setDraft(isDegrees ? (value * RAD_TO_DEG).toFixed(1) : value.toFixed(2));
+    setEditing(true);
+  }
+
+  function commit() {
+    const parsed = parseFloat(draft);
+    if (!isNaN(parsed)) {
+      const storeValue = isDegrees ? parsed * DEG_TO_RAD : parsed;
+      onCommit(storeValue);
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      commit();
+    } else if (e.key === "Escape") {
+      setEditing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <td className="py-1 px-1.5">
+        <input
+          ref={inputRef}
+          type="number"
+          step="any"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKeyDown}
+          className="w-full bg-gray-800 border border-indigo-500 rounded px-1.5 py-0.5 text-xs font-mono text-gray-200 text-right focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      onClick={startEdit}
+      className={`py-2 px-2.5 text-right font-mono text-xs cursor-pointer hover:bg-gray-700/40 rounded transition-colors ${
+        isVariable ? `${variableColor} font-bold` : "text-gray-400"
+      }`}
+      title="Click to edit"
+    >
+      {displayValue}
+    </td>
+  );
+}
 
 export default function DHTable() {
   const joints = useRobotStore((s) => s.joints);
   const removeJoint = useRobotStore((s) => s.removeJoint);
+  const updateJointDHParam = useRobotStore((s) => s.updateJointDHParam);
+  const updateJointType = useRobotStore((s) => s.updateJointType);
 
   if (joints.length === 0) {
     return (
@@ -38,40 +117,51 @@ export default function DHTable() {
                 {i + 1}
               </td>
               <td className="py-2 px-2.5">
-                <span
-                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                <button
+                  onClick={() =>
+                    updateJointType(
+                      joint.id,
+                      joint.type === "revolute" ? "prismatic" : "revolute",
+                    )
+                  }
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
                     joint.type === "revolute"
-                      ? "bg-amber-500/15 text-amber-400"
-                      : "bg-cyan-500/15 text-cyan-400"
+                      ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                      : "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
                   }`}
+                  title="Click to toggle type"
                 >
                   {joint.type === "revolute" ? "R" : "P"}
-                </span>
+                </button>
               </td>
-              <td
-                className={`py-2 px-2.5 text-right font-mono text-xs ${
-                  joint.type === "revolute"
-                    ? "text-amber-400 font-bold"
-                    : "text-gray-400"
-                }`}
-              >
-                {(joint.dhParams.theta * RAD_TO_DEG).toFixed(1)}
-              </td>
-              <td
-                className={`py-2 px-2.5 text-right font-mono text-xs ${
-                  joint.type === "prismatic"
-                    ? "text-cyan-400 font-bold"
-                    : "text-gray-400"
-                }`}
-              >
-                {joint.dhParams.d.toFixed(2)}
-              </td>
-              <td className="py-2 px-2.5 text-right font-mono text-xs text-gray-400">
-                {joint.dhParams.a.toFixed(2)}
-              </td>
-              <td className="py-2 px-2.5 text-right font-mono text-xs text-gray-400">
-                {(joint.dhParams.alpha * RAD_TO_DEG).toFixed(1)}
-              </td>
+              <EditableCell
+                value={joint.dhParams.theta}
+                isDegrees={true}
+                isVariable={joint.type === "revolute"}
+                variableColor="text-amber-400"
+                onCommit={(v) => updateJointDHParam(joint.id, "theta" satisfies keyof DHParameters, v)}
+              />
+              <EditableCell
+                value={joint.dhParams.d}
+                isDegrees={false}
+                isVariable={joint.type === "prismatic"}
+                variableColor="text-cyan-400"
+                onCommit={(v) => updateJointDHParam(joint.id, "d" satisfies keyof DHParameters, v)}
+              />
+              <EditableCell
+                value={joint.dhParams.a}
+                isDegrees={false}
+                isVariable={false}
+                variableColor=""
+                onCommit={(v) => updateJointDHParam(joint.id, "a" satisfies keyof DHParameters, v)}
+              />
+              <EditableCell
+                value={joint.dhParams.alpha}
+                isDegrees={true}
+                isVariable={false}
+                variableColor=""
+                onCommit={(v) => updateJointDHParam(joint.id, "alpha" satisfies keyof DHParameters, v)}
+              />
               <td className="py-2 px-2 text-center">
                 <button
                   onClick={() => removeJoint(joint.id)}
