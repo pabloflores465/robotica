@@ -84,7 +84,7 @@ function DimensionLabel({ link }: { link: LinkData }) {
         }}
       >
         {isPrismatic ? (
-          <>L<sub>{index + 1}</sub>+l = {valueStr}</>
+          <>L<sub>{index + 1}</sub>+d = {valueStr}</>
         ) : (
           <>L<sub>{index + 1}</sub> = {valueStr}</>
         )}

@@ -202,12 +202,10 @@ export default function DHParameterForm() {
             varColor="text-amber-400"
           />
           <ParamInput
-            label="d"
-            unit="offset"
+            label="L"
+            unit="length"
             value={d}
             onChange={(v) => handleManualChange(setD, v)}
-            variable={isVariable("d")}
-            varColor="text-cyan-400"
           />
           <ParamInput
             label="a"
@@ -222,6 +220,15 @@ export default function DHParameterForm() {
             onChange={(v) => handleManualChange(setAlphaDeg, v)}
           />
         </div>
+        {type === "prismatic" && (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-500">variable:</span>
+            <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded">
+              d
+            </span>
+            <span className="text-[10px] text-gray-600">(slider)</span>
+          </div>
+        )}
       </div>
 
       <button

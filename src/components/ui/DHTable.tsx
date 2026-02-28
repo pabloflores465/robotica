@@ -22,7 +22,7 @@ export default function DHTable() {
             <th className="text-left py-2 px-2.5 font-medium">#</th>
             <th className="text-left py-2 px-2.5 font-medium">Type</th>
             <th className="text-right py-2 px-2.5 font-medium">theta</th>
-            <th className="text-right py-2 px-2.5 font-medium">d</th>
+            <th className="text-right py-2 px-2.5 font-medium">L</th>
             <th className="text-right py-2 px-2.5 font-medium">a</th>
             <th className="text-right py-2 px-2.5 font-medium">alpha</th>
             <th className="py-2 px-2 w-8"></th>
