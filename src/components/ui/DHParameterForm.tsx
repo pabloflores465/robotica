@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRobotStore } from "../../store/robotStore";
-import type { JointType } from "../../core/types/robot";
+import type { JointType, RotationAxis } from "../../core/types/robot";
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -88,6 +88,8 @@ export default function DHParameterForm() {
   const [d, setD] = useState(0);
   const [a, setA] = useState(1);
   const [alphaDeg, setAlphaDeg] = useState(0);
+  const [rotationAxis, setRotationAxis] = useState<RotationAxis>("z");
+  const [frameAngleDeg, setFrameAngleDeg] = useState(0);
 
   function applyPreset(preset: Exclude<DirectionPreset, "custom">) {
     const config = DIRECTION_PRESETS[preset];
@@ -105,12 +107,17 @@ export default function DHParameterForm() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    addJoint(type, {
-      theta: thetaDeg * DEG_TO_RAD,
-      d,
-      a,
-      alpha: alphaDeg * DEG_TO_RAD,
-    });
+    addJoint(
+      type,
+      {
+        theta: thetaDeg * DEG_TO_RAD,
+        d,
+        a,
+        alpha: alphaDeg * DEG_TO_RAD,
+      },
+      rotationAxis,
+      frameAngleDeg * DEG_TO_RAD,
+    );
   }
 
   const isVariable = (param: string) => {
@@ -192,7 +199,7 @@ export default function DHParameterForm() {
         <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
           DH Parameters
         </label>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           <ParamInput
             label="theta"
             unit="deg"
@@ -203,15 +210,9 @@ export default function DHParameterForm() {
           />
           <ParamInput
             label="L"
-            unit="length"
+            unit="offset"
             value={d}
             onChange={(v) => handleManualChange(setD, v)}
-          />
-          <ParamInput
-            label="a"
-            unit="length"
-            value={a}
-            onChange={(v) => handleManualChange(setA, v)}
           />
           <ParamInput
             label="alpha"
@@ -220,6 +221,42 @@ export default function DHParameterForm() {
             onChange={(v) => handleManualChange(setAlphaDeg, v)}
           />
         </div>
+        {type === "revolute" && (
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] text-gray-500">axis:</span>
+            {(["x", "y", "z"] as const).map((axis) => {
+              const colors: Record<string, string> = {
+                x: "text-red-400 bg-red-500/15",
+                y: "text-green-400 bg-green-500/15",
+                z: "text-blue-400 bg-blue-500/15",
+              };
+              return (
+                <button
+                  key={axis}
+                  type="button"
+                  onClick={() => setRotationAxis(axis)}
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all ${
+                    rotationAxis === axis
+                      ? colors[axis]
+                      : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  {axis.toUpperCase()}
+                </button>
+              );
+            })}
+            <span className="text-[10px] text-gray-600 mx-1">|</span>
+            <span className="text-[10px] text-gray-500">frame:</span>
+            <input
+              type="number"
+              step="any"
+              value={frameAngleDeg}
+              onChange={(e) => setFrameAngleDeg(Number(e.target.value))}
+              className="w-14 bg-gray-800/80 border border-gray-700 rounded px-1.5 py-0.5 text-[10px] text-gray-200 font-mono focus:outline-none focus:border-indigo-500 transition-all"
+            />
+            <span className="text-[10px] text-gray-600">deg</span>
+          </div>
+        )}
         {type === "prismatic" && (
           <div className="mt-1.5 flex items-center gap-1.5">
             <span className="text-[10px] text-gray-500">variable:</span>

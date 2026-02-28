@@ -84,6 +84,8 @@ export default function DHTable() {
   const removeJoint = useRobotStore((s) => s.removeJoint);
   const updateJointDHParam = useRobotStore((s) => s.updateJointDHParam);
   const updateJointType = useRobotStore((s) => s.updateJointType);
+  const updateJointRotationAxis = useRobotStore((s) => s.updateJointRotationAxis);
+  const updateJointFrameAngle = useRobotStore((s) => s.updateJointFrameAngle);
 
   if (joints.length === 0) {
     return (
@@ -104,6 +106,7 @@ export default function DHTable() {
             <th className="text-right py-2 px-2.5 font-medium">L</th>
             <th className="text-right py-2 px-2.5 font-medium">a</th>
             <th className="text-right py-2 px-2.5 font-medium">alpha</th>
+            <th className="text-right py-2 px-2.5 font-medium">frame</th>
             <th className="py-2 px-2 w-8"></th>
           </tr>
         </thead>
@@ -117,22 +120,40 @@ export default function DHTable() {
                 {i + 1}
               </td>
               <td className="py-2 px-2.5">
-                <button
-                  onClick={() =>
-                    updateJointType(
-                      joint.id,
-                      joint.type === "revolute" ? "prismatic" : "revolute",
-                    )
-                  }
-                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                    joint.type === "revolute"
-                      ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
-                      : "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
-                  }`}
-                  title="Click to toggle type"
-                >
-                  {joint.type === "revolute" ? "R" : "P"}
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() =>
+                      updateJointType(
+                        joint.id,
+                        joint.type === "revolute" ? "prismatic" : "revolute",
+                      )
+                    }
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                      joint.type === "revolute"
+                        ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                        : "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
+                    }`}
+                    title="Click to toggle type"
+                  >
+                    {joint.type === "revolute" ? "R" : "P"}
+                  </button>
+                  {joint.type === "revolute" && (
+                    <button
+                      onClick={() => {
+                        const next: Record<string, "x" | "y" | "z"> = { x: "y", y: "z", z: "x" };
+                        updateJointRotationAxis(joint.id, next[joint.rotationAxis] ?? "z");
+                      }}
+                      className={`text-[9px] font-bold px-1 py-0.5 rounded cursor-pointer transition-colors ${
+                        joint.rotationAxis === "x" ? "bg-red-500/15 text-red-400 hover:bg-red-500/25" :
+                        joint.rotationAxis === "y" ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" :
+                        "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+                      }`}
+                      title={`Rotation axis: ${joint.rotationAxis.toUpperCase()} (click to cycle)`}
+                    >
+                      {joint.rotationAxis.toUpperCase()}
+                    </button>
+                  )}
+                </div>
               </td>
               <EditableCell
                 value={joint.dhParams.theta}
@@ -161,6 +182,13 @@ export default function DHTable() {
                 isVariable={false}
                 variableColor=""
                 onCommit={(v) => updateJointDHParam(joint.id, "alpha" satisfies keyof DHParameters, v)}
+              />
+              <EditableCell
+                value={joint.frameAngle}
+                isDegrees={true}
+                isVariable={false}
+                variableColor=""
+                onCommit={(v) => updateJointFrameAngle(joint.id, v)}
               />
               <td className="py-2 px-2 text-center">
                 <button

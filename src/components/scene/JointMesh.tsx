@@ -1,13 +1,21 @@
-import type { JointType } from "../../core/types/robot";
+import type { JointType, RotationAxis } from "../../core/types/robot";
 
 interface JointMeshProps {
   type: JointType;
+  rotationAxis?: RotationAxis;
 }
 
-export default function JointMesh({ type }: JointMeshProps) {
+/** Cylinder rotation to align Three.js default Y-axis with the joint's rotation axis */
+const AXIS_ROTATIONS: Record<RotationAxis, [number, number, number]> = {
+  x: [0, 0, -Math.PI / 2],
+  y: [0, 0, 0],
+  z: [Math.PI / 2, 0, 0],
+};
+
+export default function JointMesh({ type, rotationAxis = "z" }: JointMeshProps) {
   if (type === "revolute") {
     return (
-      <mesh>
+      <mesh rotation={AXIS_ROTATIONS[rotationAxis]}>
         <cylinderGeometry args={[0.08, 0.08, 0.15, 16]} />
         <meshStandardMaterial
           color="#f59e0b"

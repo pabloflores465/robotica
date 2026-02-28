@@ -1,4 +1,5 @@
 import { useRobotStore } from "../../store/robotStore";
+import BaseFrameControls from "./BaseFrameControls";
 import DHParameterForm from "./DHParameterForm";
 import DHTable from "./DHTable";
 import JointSliders from "./JointSliders";
@@ -27,6 +28,10 @@ export default function Sidebar() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+        <Section title="Base Frame">
+          <BaseFrameControls />
+        </Section>
+
         <Section title="Add Joint" defaultOpen>
           <DHParameterForm />
         </Section>

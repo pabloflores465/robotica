@@ -7,11 +7,14 @@ import {
   getPositionFromMatrix,
   identity4,
 } from "../../math/matrixOps";
+import { getEffectiveDHParams } from "../../math/dhTransform";
 import type { Matrix4x4 } from "../../core/types/matrix";
-import type { Joint } from "../../core/types/robot";
+import type { Joint, RotationAxis } from "../../core/types/robot";
 import CoordinateFrame from "./CoordinateFrame";
 import JointMesh from "./JointMesh";
 import LinkMesh from "./LinkMesh";
+import ThetaArc from "./ThetaArc";
+import DOffsetArrow from "./DOffsetArrow";
 
 interface JointGroupProps {
   matrix: Matrix4x4;
@@ -32,7 +35,34 @@ function JointGroup({ matrix, joint }: JointGroupProps) {
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
       <CoordinateFrame size={0.4} showLabels />
-      <JointMesh type={joint.type} />
+      <JointMesh type={joint.type} rotationAxis={joint.rotationAxis} />
+    </group>
+  );
+}
+
+interface DHAnnotationGroupProps {
+  matrix: Matrix4x4;
+  theta: number;
+  d: number;
+  jointIndex: number;
+  rotationAxis: RotationAxis;
+}
+
+function DHAnnotationGroup({ matrix, theta, d, jointIndex, rotationAxis }: DHAnnotationGroupProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.matrix.copy(threeMatrix);
+      groupRef.current.matrixWorldNeedsUpdate = true;
+    }
+  }, [threeMatrix]);
+
+  return (
+    <group ref={groupRef} matrixAutoUpdate={false}>
+      <ThetaArc angle={theta} jointIndex={jointIndex} rotationAxis={rotationAxis} />
+      <DOffsetArrow dValue={d} jointIndex={jointIndex} />
     </group>
   );
 }
@@ -96,10 +126,11 @@ function DimensionLabel({ link }: { link: LinkData }) {
 export default function RobotArm() {
   const joints = useRobotStore((s) => s.joints);
   const kinematics = useRobotStore((s) => s.kinematics);
+  const baseMatrix = useRobotStore((s) => s.baseMatrix);
 
   const links = useMemo(() => {
     const result: LinkData[] = [];
-    const baseOrigin = new THREE.Vector3(0, 0, 0);
+    const baseOrigin = getPositionFromMatrix(baseMatrix);
 
     for (let i = 0; i < kinematics.cumulativeMatrices.length; i++) {
       const prevPos =
@@ -140,6 +171,22 @@ export default function RobotArm() {
         const matrix = kinematics.cumulativeMatrices[i];
         if (!matrix) return null;
         return <JointGroup key={joint.id} matrix={matrix} joint={joint} />;
+      })}
+
+      {/* DH parameter annotations (theta arcs and d arrows) */}
+      {joints.map((joint, i) => {
+        const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
+        const effective = getEffectiveDHParams(joint);
+        return (
+          <DHAnnotationGroup
+            key={`dh-ann-${joint.id}`}
+            matrix={prevMatrix}
+            theta={effective.theta}
+            d={effective.d}
+            jointIndex={i}
+            rotationAxis={joint.rotationAxis}
+          />
+        );
       })}
 
       {/* Links between joints with dimension labels */}
