@@ -1,4 +1,5 @@
 import { Grid } from "@react-three/drei";
+import * as THREE from "three";
 import CoordinateFrame from "./CoordinateFrame";
 
 export default function GroundGrid() {
@@ -7,6 +8,7 @@ export default function GroundGrid() {
       {/* Fine sub-grid: 0.1 unit cells */}
       <Grid
         infiniteGrid
+        side={THREE.DoubleSide}
         cellSize={0.1}
         cellColor="#222222"
         cellThickness={0.4}
@@ -21,6 +23,7 @@ export default function GroundGrid() {
       {/* Main grid: 1 unit cells, 5 unit sections */}
       <Grid
         infiniteGrid
+        side={THREE.DoubleSide}
         cellSize={1}
         cellColor="#444444"
         cellThickness={0.8}
