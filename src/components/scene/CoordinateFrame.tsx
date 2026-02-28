@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { Text } from "@react-three/drei";
+import { Html } from "@react-three/drei";
 
 interface CoordinateFrameProps {
   size?: number;
@@ -17,6 +17,12 @@ const RED = new THREE.Color(0xff0000);
 const GREEN = new THREE.Color(0x00cc00);
 const BLUE = new THREE.Color(0x0066ff);
 
+const AXES = [
+  { dir: X_DIR, color: RED, label: "X", hexColor: "#ff0000" },
+  { dir: Y_DIR, color: GREEN, label: "Y", hexColor: "#00cc00" },
+  { dir: Z_DIR, color: BLUE, label: "Z", hexColor: "#0066ff" },
+] as const;
+
 export default function CoordinateFrame({
   size = 0.5,
   opacity = 1,
@@ -26,15 +32,8 @@ export default function CoordinateFrame({
     const headLength = size * 0.2;
     const headWidth = size * 0.08;
 
-    return [
-      { dir: X_DIR, color: RED, label: "X", hexColor: "#ff0000" },
-      { dir: Y_DIR, color: GREEN, label: "Y", hexColor: "#00cc00" },
-      { dir: Z_DIR, color: BLUE, label: "Z", hexColor: "#0066ff" },
-    ].map(({ dir, color, label, hexColor }) => ({
+    return AXES.map(({ dir, color, label }) => ({
       key: label,
-      label,
-      hexColor,
-      dir,
       args: [dir, ORIGIN, size, color, headLength, headWidth] as [
         THREE.Vector3,
         THREE.Vector3,
@@ -48,7 +47,6 @@ export default function CoordinateFrame({
   }, [size, opacity]);
 
   const labelOffset = size * 1.15;
-  const fontSize = size * 0.25;
 
   return (
     <group>
@@ -56,24 +54,26 @@ export default function CoordinateFrame({
         <arrowHelper key={arrow.key} args={arrow.args} />
       ))}
       {showLabels &&
-        arrows.map((arrow) => (
-          <Text
-            key={`label-${arrow.key}`}
+        AXES.map(({ dir, label, hexColor }) => (
+          <Html
+            key={`label-${label}`}
             position={[
-              arrow.dir.x * labelOffset,
-              arrow.dir.y * labelOffset,
-              arrow.dir.z * labelOffset,
+              dir.x * labelOffset,
+              dir.y * labelOffset,
+              dir.z * labelOffset,
             ]}
-            fontSize={fontSize}
-            color={arrow.hexColor}
-            anchorX="center"
-            anchorY="middle"
-            fontWeight="bold"
-            renderOrder={999}
-            depthTest={false}
+            center
+            style={{
+              color: hexColor,
+              fontSize: `${Math.round(size * 14)}px`,
+              fontWeight: "bold",
+              fontFamily: "monospace",
+              userSelect: "none",
+              pointerEvents: "none",
+            }}
           >
-            {arrow.label}
-          </Text>
+            {label}
+          </Html>
         ))}
     </group>
   );

@@ -10,7 +10,7 @@ export default function RobotScene() {
   return (
     <Canvas
       camera={{ position: [4, 3, 4], fov: 50, up: [0, 0, 1] }}
-      style={{ background: "#1a1a2e" }}
+      style={{ background: "#111111" }}
     >
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />

@@ -7,9 +7,9 @@ export default function GroundGrid() {
       <Grid
         args={[20, 20]}
         cellSize={1}
-        cellColor="#555555"
+        cellColor="#444444"
         sectionSize={5}
-        sectionColor="#999999"
+        sectionColor="#aaaaaa"
         fadeDistance={25}
         position={[0, 0, -0.001]}
         rotation={[Math.PI / 2, 0, 0]}
