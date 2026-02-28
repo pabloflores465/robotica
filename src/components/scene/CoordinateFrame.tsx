@@ -74,7 +74,7 @@ export default function CoordinateFrame({
   }, [size, opacity]);
 
   const labelOffset = size * 1.15;
-  const fontSize = Math.round(size * 14);
+  const fontSize = Math.max(12, Math.round(size * 14));
 
   const labelStyle = (hex: string, fSize: number): React.CSSProperties => ({
     color: hex,
@@ -83,6 +83,7 @@ export default function CoordinateFrame({
     fontFamily: "monospace",
     userSelect: "none",
     pointerEvents: "none",
+    whiteSpace: "nowrap",
   });
 
   return (
@@ -128,7 +129,7 @@ export default function CoordinateFrame({
             center
             style={labelStyle(hexColor, fontSize)}
           >
-            -{label}
+            {`-${label}`}
           </Html>
         ))}
     </group>
