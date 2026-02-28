@@ -15,16 +15,23 @@ function SceneControls() {
     if (!controls) return;
     const canvas = controls.domElement;
 
-    // Track if a pinch gesture is active (ctrlKey from browser pinch)
-    let isPinching = false;
+    // Track whether the real Ctrl key is physically held down.
+    // Browser pinch-to-zoom also sets ctrlKey=true on wheel events,
+    // but it does NOT fire keydown, so realCtrl stays false for pinch.
+    let realCtrl = false;
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Control") realCtrl = true;
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === "Control") realCtrl = false;
+    }
 
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const camera = controls.object as THREE.PerspectiveCamera;
 
-      // Browser sends ctrlKey=true for trackpad pinch-to-zoom
-      // Distinguish real Ctrl key from pinch by tracking keydown
-      if (e.ctrlKey && !isPinching && !e.metaKey) {
+      if (realCtrl) {
         // Real Ctrl + trackpad scroll = orbit/rotate
         const speed = 0.003;
         const offset = camera.position.clone().sub(controls.target);
@@ -43,8 +50,8 @@ function SceneControls() {
         camera.position.copy(controls.target).add(offset);
         camera.lookAt(controls.target);
         controls.update();
-      } else if (isPinching || e.metaKey) {
-        // Pinch-to-zoom (browser sets ctrlKey for pinch, we detect via isPinching)
+      } else if (e.ctrlKey || e.metaKey) {
+        // Pinch-to-zoom: browser sets ctrlKey=true but realCtrl is false
         const factor = 1 + e.deltaY * 0.01;
         const offset = camera.position.clone().sub(controls.target);
         offset.multiplyScalar(factor);
@@ -75,28 +82,19 @@ function SceneControls() {
       }
     }
 
-    // Detect pinch gestures: gesturestart/gestureend (Safari) or
-    // pointerdown with multiple touches
-    function onGestureStart() {
-      isPinching = true;
-    }
-    function onGestureEnd() {
-      isPinching = false;
-    }
-
     function onContextMenu(e: Event) {
       e.preventDefault();
     }
 
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("contextmenu", onContextMenu);
-    canvas.addEventListener("gesturestart", onGestureStart);
-    canvas.addEventListener("gestureend", onGestureEnd);
     return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
-      canvas.removeEventListener("gesturestart", onGestureStart);
-      canvas.removeEventListener("gestureend", onGestureEnd);
     };
   }, []);
 
