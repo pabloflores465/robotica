@@ -4,14 +4,75 @@ import type { JointType } from "../../core/types/robot";
 
 const DEG_TO_RAD = Math.PI / 180;
 
+type DirectionPreset = "along-x" | "along-z" | "elbow-up" | "elbow-down" | "custom";
+
+interface PresetConfig {
+  label: string;
+  description: string;
+  thetaDeg: number;
+  d: number;
+  a: number;
+  alphaDeg: number;
+}
+
+const DIRECTION_PRESETS: Record<Exclude<DirectionPreset, "custom">, PresetConfig> = {
+  "along-x": {
+    label: "Forward (X)",
+    description: "a=1, extends along X",
+    thetaDeg: 0,
+    d: 0,
+    a: 1,
+    alphaDeg: 0,
+  },
+  "along-z": {
+    label: "Up (Z)",
+    description: "d=1, extends along Z",
+    thetaDeg: 0,
+    d: 1,
+    a: 0,
+    alphaDeg: 0,
+  },
+  "elbow-up": {
+    label: "Elbow Up",
+    description: "a=1, alpha=-90",
+    thetaDeg: 0,
+    d: 0,
+    a: 1,
+    alphaDeg: -90,
+  },
+  "elbow-down": {
+    label: "Elbow Down",
+    description: "a=1, alpha=90",
+    thetaDeg: 0,
+    d: 0,
+    a: 1,
+    alphaDeg: 90,
+  },
+};
+
 export default function DHParameterForm() {
   const addJoint = useRobotStore((s) => s.addJoint);
 
   const [type, setType] = useState<JointType>("revolute");
+  const [direction, setDirection] = useState<DirectionPreset>("along-x");
   const [thetaDeg, setThetaDeg] = useState(0);
   const [d, setD] = useState(0);
   const [a, setA] = useState(1);
   const [alphaDeg, setAlphaDeg] = useState(0);
+
+  function applyPreset(preset: Exclude<DirectionPreset, "custom">) {
+    const config = DIRECTION_PRESETS[preset];
+    setDirection(preset);
+    setThetaDeg(config.thetaDeg);
+    setD(config.d);
+    setA(config.a);
+    setAlphaDeg(config.alphaDeg);
+  }
+
+  function handleManualChange(setter: (v: number) => void, value: number) {
+    setter(value);
+    setDirection("custom");
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,6 +122,41 @@ export default function DHParameterForm() {
         </button>
       </div>
 
+      {/* Direction presets */}
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Direction</label>
+        <div className="grid grid-cols-2 gap-1.5">
+          {(Object.entries(DIRECTION_PRESETS) as [Exclude<DirectionPreset, "custom">, PresetConfig][]).map(
+            ([key, config]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => applyPreset(key)}
+                className={`px-2 py-1.5 rounded text-xs font-medium transition-colors text-left ${
+                  direction === key
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+                }`}
+                title={config.description}
+              >
+                {config.label}
+              </button>
+            ),
+          )}
+          <button
+            type="button"
+            onClick={() => setDirection("custom")}
+            className={`col-span-2 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+              direction === "custom"
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+            }`}
+          >
+            Custom
+          </button>
+        </div>
+      </div>
+
       {/* DH Parameters */}
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -73,7 +169,7 @@ export default function DHParameterForm() {
             type="number"
             step="any"
             value={thetaDeg}
-            onChange={(e) => setThetaDeg(Number(e.target.value))}
+            onChange={(e) => handleManualChange(setThetaDeg, Number(e.target.value))}
             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
           />
         </div>
@@ -87,7 +183,7 @@ export default function DHParameterForm() {
             type="number"
             step="any"
             value={d}
-            onChange={(e) => setD(Number(e.target.value))}
+            onChange={(e) => handleManualChange(setD, Number(e.target.value))}
             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
           />
         </div>
@@ -99,7 +195,7 @@ export default function DHParameterForm() {
             type="number"
             step="any"
             value={a}
-            onChange={(e) => setA(Number(e.target.value))}
+            onChange={(e) => handleManualChange(setA, Number(e.target.value))}
             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
           />
         </div>
@@ -111,7 +207,7 @@ export default function DHParameterForm() {
             type="number"
             step="any"
             value={alphaDeg}
-            onChange={(e) => setAlphaDeg(Number(e.target.value))}
+            onChange={(e) => handleManualChange(setAlphaDeg, Number(e.target.value))}
             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
           />
         </div>

@@ -7,14 +7,14 @@ export default function GroundGrid() {
       <Grid
         args={[20, 20]}
         cellSize={1}
-        cellColor="#4a4a4a"
+        cellColor="#555555"
         sectionSize={5}
-        sectionColor="#6a6a6a"
+        sectionColor="#999999"
         fadeDistance={25}
-        position={[0, -0.001, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0, -0.001]}
+        rotation={[Math.PI / 2, 0, 0]}
       />
-      <CoordinateFrame size={1} />
+      <CoordinateFrame size={1} showLabels />
     </group>
   );
 }

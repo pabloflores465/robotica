@@ -1,12 +1,15 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import * as THREE from "three";
 import RobotArm from "./RobotArm";
 import GroundGrid from "./GroundGrid";
+
+const Z_UP = new THREE.Vector3(0, 0, 1);
 
 export default function RobotScene() {
   return (
     <Canvas
-      camera={{ position: [4, 3, 4], fov: 50 }}
+      camera={{ position: [4, 3, 4], fov: 50, up: [0, 0, 1] }}
       style={{ background: "#1a1a2e" }}
     >
       <ambientLight intensity={0.5} />
@@ -14,7 +17,7 @@ export default function RobotScene() {
       <directionalLight position={[-5, 5, -5]} intensity={0.3} />
       <RobotArm />
       <GroundGrid />
-      <OrbitControls makeDefault />
+      <OrbitControls makeDefault up={Z_UP} />
     </Canvas>
   );
 }

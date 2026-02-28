@@ -30,7 +30,7 @@ function JointGroup({ matrix, joint }: JointGroupProps) {
 
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
-      <CoordinateFrame size={0.4} />
+      <CoordinateFrame size={0.4} showLabels />
       <JointMesh type={joint.type} />
     </group>
   );
