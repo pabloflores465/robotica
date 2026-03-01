@@ -7,8 +7,14 @@ import GroundGrid from "./GroundGrid";
 
 const Z_UP = new THREE.Vector3(0, 0, 1);
 
-function SceneControls() {
+function SceneControls({ touchRotate = false }: { touchRotate?: boolean }) {
   const controlsRef = useRef<React.ComponentRef<typeof OrbitControls>>(null);
+  const touchRotateRef = useRef(touchRotate);
+
+  // Keep ref in sync with prop
+  useEffect(() => {
+    touchRotateRef.current = touchRotate;
+  }, [touchRotate]);
 
   useEffect(() => {
     const controls = controlsRef.current;
@@ -30,6 +36,27 @@ function SceneControls() {
       if (e.key === "Shift") realShift = false;
     }
 
+    // Z-up orbit: reusable spherical coordinate math (Y<->Z swap)
+    function orbitCamera(deltaX: number, deltaY: number, speed: number) {
+      const camera = controls.object as THREE.PerspectiveCamera;
+      const offset = camera.position.clone().sub(controls.target);
+
+      // Swap Y<->Z for THREE.Spherical (assumes Y-up), we use Z-up
+      const swapped = new THREE.Vector3(offset.x, offset.z, offset.y);
+      const spherical = new THREE.Spherical().setFromVector3(swapped);
+
+      spherical.theta -= deltaX * speed;
+      spherical.phi += deltaY * speed;
+      spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+
+      swapped.setFromSpherical(spherical);
+      offset.set(swapped.x, swapped.z, swapped.y);
+
+      camera.position.copy(controls.target).add(offset);
+      camera.lookAt(controls.target);
+      controls.update();
+    }
+
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const camera = controls.object as THREE.PerspectiveCamera;
@@ -43,23 +70,7 @@ function SceneControls() {
         controls.update();
       } else if (realCtrl) {
         // Real Ctrl + trackpad scroll = orbit/rotate
-        const speed = 0.003;
-        const offset = camera.position.clone().sub(controls.target);
-
-        // Swap Y<->Z for THREE.Spherical (assumes Y-up), we use Z-up
-        const swapped = new THREE.Vector3(offset.x, offset.z, offset.y);
-        const spherical = new THREE.Spherical().setFromVector3(swapped);
-
-        spherical.theta -= e.deltaX * speed;
-        spherical.phi += e.deltaY * speed;
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
-
-        swapped.setFromSpherical(spherical);
-        offset.set(swapped.x, swapped.z, swapped.y);
-
-        camera.position.copy(controls.target).add(offset);
-        camera.lookAt(controls.target);
-        controls.update();
+        orbitCamera(e.deltaX, e.deltaY, 0.003);
       } else if (e.ctrlKey || e.metaKey) {
         // Pinch-to-zoom: browser sets ctrlKey=true but realCtrl is false
         const factor = 1 + e.deltaY * 0.01;
@@ -92,6 +103,43 @@ function SceneControls() {
       }
     }
 
+    // Custom touch rotation for mobile (Z-up aware)
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isSingleTouch = false;
+
+    function onTouchStart(e: TouchEvent) {
+      if (!touchRotateRef.current) return;
+      if (e.touches.length === 1) {
+        isSingleTouch = true;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        e.preventDefault();
+      } else {
+        isSingleTouch = false;
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (!touchRotateRef.current || !isSingleTouch) return;
+      if (e.touches.length !== 1) {
+        isSingleTouch = false;
+        return;
+      }
+      e.preventDefault();
+
+      const deltaX = e.touches[0].clientX - touchStartX;
+      const deltaY = e.touches[0].clientY - touchStartY;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+
+      orbitCamera(deltaX, deltaY, 0.005);
+    }
+
+    function onTouchEnd() {
+      isSingleTouch = false;
+    }
+
     function onContextMenu(e: Event) {
       e.preventDefault();
     }
@@ -99,14 +147,34 @@ function SceneControls() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
     canvas.addEventListener("contextmenu", onContextMenu);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("contextmenu", onContextMenu);
     };
   }, []);
+
+  // Imperatively sync touch mode: disable OrbitControls' built-in touch handling
+  // when custom rotation is active
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    // Always disable OrbitControls' built-in rotate - we handle it ourselves
+    controls.enableRotate = false;
+    controls.enablePan = !touchRotate;
+    controls.touches = touchRotate
+      ? { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }
+      : { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+    controls.update();
+  }, [touchRotate]);
 
   return (
     <OrbitControls
@@ -115,18 +183,25 @@ function SceneControls() {
       up={Z_UP}
       enableZoom={false}
       enableRotate={false}
-      enablePan
+      enablePan={!touchRotate}
       screenSpacePanning
+      minPolarAngle={0.1}
+      maxPolarAngle={Math.PI - 0.1}
       mouseButtons={{
         LEFT: THREE.MOUSE.PAN,
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.PAN,
       }}
+      touches={
+        touchRotate
+          ? { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }
+          : { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN }
+      }
     />
   );
 }
 
-export default function RobotScene() {
+export default function RobotScene({ touchRotate = false }: { touchRotate?: boolean }) {
   return (
     <Canvas
       camera={{ position: [4, 3, 4], fov: 50, up: [0, 0, 1] }}
@@ -137,7 +212,7 @@ export default function RobotScene() {
       <directionalLight position={[-5, 5, -5]} intensity={0.3} />
       <RobotArm />
       <GroundGrid />
-      <SceneControls />
+      <SceneControls touchRotate={touchRotate} />
     </Canvas>
   );
 }
