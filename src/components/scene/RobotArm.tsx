@@ -194,11 +194,9 @@ export default function RobotArm() {
               // Auto DH orientation from the previous auto frame
               const autoPrev = i === 0 ? autoBaseFrame : autoKinematics.cumulativeMatrices[i - 1]!;
               const autoAxes = extractFrameAxes(autoPrev);
-              // Manual FK position of the previous joint (or base)
-              const manualPrevPos = i === 0
-                ? getPositionVec3(baseMatrix)
-                : getPositionVec3(kinematics.cumulativeMatrices[manualJointIndices[i - 1]!]!);
-              const annMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, manualPrevPos);
+              // Position at the current joint (where the rotation happens)
+              const jointPos = getPositionVec3(kinematics.cumulativeMatrices[manualJointIndices[i]!]!);
+              const annMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, jointPos);
               const effective = getEffectiveDHParams(element);
               return (
                 <DHAnnotationGroup
