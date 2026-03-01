@@ -836,22 +836,54 @@ function synthesizeJoints(
         });
       }
     } else {
-      // Non-DH-compatible: add a single link element with the full displacement
-      // encoded as d (z-component) and a (x-component), ignoring y for FK
-      // The tool transform handles the full displacement separately
-      joints.push({
-        id: crypto.randomUUID(),
-        name: "Tool",
-        elementKind: "link",
-        type: "revolute",
-        dhParams: { theta: 0, d: disp.z, a: disp.x, alpha: 0 },
-        rotationAxis: "z",
-        frameAngle: 0,
-        variableValue: 0,
-        minLimit: 0,
-        maxLimit: 0,
-        autoComputed: true,
-      });
+      // Non-DH-compatible: the displacement has a y-component that can't be
+      // represented by a single z-axis DH transform. Split into separate links
+      // for each axis component so FK renders the full displacement correctly.
+      if (!isNearZero(disp.z)) {
+        joints.push({
+          id: crypto.randomUUID(),
+          name: "EE-dz",
+          elementKind: "link",
+          type: "revolute",
+          dhParams: { theta: 0, d: disp.z, a: 0, alpha: 0 },
+          rotationAxis: "z",
+          frameAngle: 0,
+          variableValue: 0,
+          minLimit: 0,
+          maxLimit: 0,
+          autoComputed: true,
+        });
+      }
+      if (!isNearZero(disp.x)) {
+        joints.push({
+          id: crypto.randomUUID(),
+          name: "EE-ax",
+          elementKind: "link",
+          type: "revolute",
+          dhParams: { theta: 0, d: 0, a: disp.x, alpha: 0 },
+          rotationAxis: "z",
+          frameAngle: 0,
+          variableValue: 0,
+          minLimit: 0,
+          maxLimit: 0,
+          autoComputed: true,
+        });
+      }
+      if (!isNearZero(disp.y)) {
+        joints.push({
+          id: crypto.randomUUID(),
+          name: "EE-dy",
+          elementKind: "link",
+          type: "revolute",
+          dhParams: { theta: 0, d: disp.y, a: 0, alpha: 0 },
+          rotationAxis: "y",
+          frameAngle: 0,
+          variableValue: 0,
+          minLimit: 0,
+          maxLimit: 0,
+          autoComputed: true,
+        });
+      }
     }
   }
 
