@@ -216,6 +216,7 @@ function EditableLengthCell({ value, onCommit }: { value: number; onCommit: (val
 export default function DHTable() {
   const elements = useRobotStore((s) => s.elements);
   const removeElement = useRobotStore((s) => s.removeElement);
+  const toggleElementVisibility = useRobotStore((s) => s.toggleElementVisibility);
   const updateJointDHParam = useRobotStore((s) => s.updateJointDHParam);
   const updateJointType = useRobotStore((s) => s.updateJointType);
   const updateJointRotationAxis = useRobotStore((s) => s.updateJointRotationAxis);
@@ -250,8 +251,8 @@ export default function DHTable() {
         <tbody className="divide-y divide-gray-800/50">
           {elements.map((element) => (
             element.elementKind === "link"
-              ? <LinkRow key={element.id} element={element} onRemove={() => removeElement(element.id)} onUpdateLength={updateLinkLength} onUpdateDirection={updateLinkDirection} onUpdateName={updateElementName} />
-              : <JointRow key={element.id} element={element} onRemove={() => removeElement(element.id)} onUpdateDHParam={updateJointDHParam} onUpdateType={updateJointType} onUpdateRotationAxis={updateJointRotationAxis} onUpdateFrameAngle={updateJointFrameAngle} onUpdateName={updateElementName} />
+              ? <LinkRow key={element.id} element={element} onRemove={() => removeElement(element.id)} onToggleVisibility={() => toggleElementVisibility(element.id)} onUpdateLength={updateLinkLength} onUpdateDirection={updateLinkDirection} onUpdateName={updateElementName} />
+              : <JointRow key={element.id} element={element} onRemove={() => removeElement(element.id)} onToggleVisibility={() => toggleElementVisibility(element.id)} onUpdateDHParam={updateJointDHParam} onUpdateType={updateJointType} onUpdateRotationAxis={updateJointRotationAxis} onUpdateFrameAngle={updateJointFrameAngle} onUpdateName={updateElementName} />
           ))}
         </tbody>
       </table>
@@ -262,6 +263,7 @@ export default function DHTable() {
 interface JointRowProps {
   element: Joint;
   onRemove: () => void;
+  onToggleVisibility: () => void;
   onUpdateDHParam: (id: string, param: keyof DHParameters, value: number) => void;
   onUpdateType: (id: string, type: "revolute" | "prismatic") => void;
   onUpdateRotationAxis: (id: string, axis: "x" | "y" | "z") => void;
@@ -269,7 +271,7 @@ interface JointRowProps {
   onUpdateName: (id: string, name: string) => void;
 }
 
-function JointRow({ element, onRemove, onUpdateDHParam, onUpdateType, onUpdateRotationAxis, onUpdateFrameAngle, onUpdateName }: JointRowProps) {
+function JointRow({ element, onRemove, onToggleVisibility, onUpdateDHParam, onUpdateType, onUpdateRotationAxis, onUpdateFrameAngle, onUpdateName }: JointRowProps) {
   const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
   const revoluteFrameAxis = useRobotStore((s) => s.revoluteFrameAxis);
 
@@ -355,15 +357,28 @@ function JointRow({ element, onRemove, onUpdateDHParam, onUpdateType, onUpdateRo
         onCommit={(v) => onUpdateFrameAngle(element.id, v)}
       />
       <td className="py-2 px-2 text-center">
-        <button
-          onClick={onRemove}
-          className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all p-0.5 rounded hover:bg-red-400/10"
-          title="Remove element"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="flex items-center justify-center gap-0.5">
+          <button
+            onClick={onToggleVisibility}
+            className={`text-xs transition-all p-0.5 rounded ${
+              element.hidden
+                ? "text-gray-500 hover:text-gray-300 hover:bg-gray-700/40"
+                : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/40"
+            }`}
+            title={element.hidden ? "Show element" : "Hide element"}
+          >
+            {element.hidden ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+          <button
+            onClick={onRemove}
+            className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all p-0.5 rounded hover:bg-red-400/10"
+            title="Remove element"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -372,12 +387,13 @@ function JointRow({ element, onRemove, onUpdateDHParam, onUpdateType, onUpdateRo
 interface LinkRowProps {
   element: Joint;
   onRemove: () => void;
+  onToggleVisibility: () => void;
   onUpdateLength: (id: string, length: number) => void;
   onUpdateDirection: (id: string, direction: LinkDirection) => void;
   onUpdateName: (id: string, name: string) => void;
 }
 
-function LinkRow({ element, onRemove, onUpdateLength, onUpdateDirection, onUpdateName }: LinkRowProps) {
+function LinkRow({ element, onRemove, onToggleVisibility, onUpdateLength, onUpdateDirection, onUpdateName }: LinkRowProps) {
   const direction = getLinkDirection(element);
 
   function cycleDirection() {
@@ -418,16 +434,48 @@ function LinkRow({ element, onRemove, onUpdateLength, onUpdateDirection, onUpdat
       />
       <td className="py-2 px-2.5"></td>
       <td className="py-2 px-2 text-center">
-        <button
-          onClick={onRemove}
-          className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all p-0.5 rounded hover:bg-red-400/10"
-          title="Remove element"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="flex items-center justify-center gap-0.5">
+          <button
+            onClick={onToggleVisibility}
+            className={`text-xs transition-all p-0.5 rounded ${
+              element.hidden
+                ? "text-gray-500 hover:text-gray-300 hover:bg-gray-700/40"
+                : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/40"
+            }`}
+            title={element.hidden ? "Show element" : "Hide element"}
+          >
+            {element.hidden ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+          <button
+            onClick={onRemove}
+            className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all p-0.5 rounded hover:bg-red-400/10"
+            title="Remove element"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </td>
     </tr>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.6 6.2A10.4 10.4 0 0 1 12 6c6 0 9.5 6 9.5 6a16.3 16.3 0 0 1-3.2 3.9M6.2 6.2A15.8 15.8 0 0 0 2.5 12s3.5 6 9.5 6c1.4 0 2.7-.3 3.9-.8" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
   );
 }

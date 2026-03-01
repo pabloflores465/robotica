@@ -54,6 +54,7 @@ function validateDiagramData(raw: unknown): DiagramData | null {
     const e = el as Record<string, unknown>;
     if (typeof e.name !== "string") return null;
     if (e.elementKind !== "joint" && e.elementKind !== "link") return null;
+    if (e.hidden !== undefined && typeof e.hidden !== "boolean") return null;
     if (e.type !== "revolute" && e.type !== "prismatic") return null;
     if (typeof e.dhParams !== "object" || e.dhParams === null) return null;
   }

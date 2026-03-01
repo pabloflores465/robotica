@@ -28,6 +28,8 @@ export interface Joint {
   name: string;
   /** Whether this element is an articulated joint or a rigid link segment */
   elementKind: ElementKind;
+  /** If true, this element is hidden in the 3D scene */
+  hidden?: boolean;
   type: JointType;
   /** DH parameters (theta/d contain the constant offset; variable value is separate) */
   dhParams: DHParameters;

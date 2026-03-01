@@ -71,6 +71,7 @@ interface RobotState {
   updateJointFrameAngle: (id: string, angle: number) => void;
   updateLinkLength: (id: string, length: number) => void;
   updateLinkDirection: (id: string, direction: LinkDirection) => void;
+  toggleElementVisibility: (id: string) => void;
   updateElementName: (id: string, name: string) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
   setRevoluteAroundZOnly: (enabled: boolean) => void;
@@ -225,6 +226,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       id: crypto.randomUUID(),
       name: name ?? `Joint ${jointCounter}`,
       elementKind: "joint",
+      hidden: false,
       type,
       dhParams: {
         theta: dhParams?.theta ?? 0,
@@ -254,6 +256,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       id: crypto.randomUUID(),
       name: name ?? `Link ${linkCounter}`,
       elementKind: "link",
+      hidden: false,
       type: "revolute",
       dhParams: { theta: 0, d: sign * length, a: 0, alpha: 0 },
       rotationAxis: axis,
@@ -422,6 +425,14 @@ export const useRobotStore = create<RobotState>((set) => ({
       const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
       return { elements, kinematics };
     });
+  },
+
+  toggleElementVisibility: (id) => {
+    set((state) => ({
+      elements: state.elements.map((el) =>
+        el.id === id ? { ...el, hidden: !el.hidden } : el,
+      ),
+    }));
   },
 
   updateElementName: (id, name) => {

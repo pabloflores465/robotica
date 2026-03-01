@@ -156,7 +156,7 @@ export default function RobotArm() {
         : getPositionFromMatrix(kinematics.cumulativeMatrices[i - 1]!);
       const currPos = getPositionFromMatrix(kinematics.cumulativeMatrices[i]!);
       const el = elements[i];
-      if (el) {
+      if (el && !el.hidden) {
         result.push({ key: `link-${el.id}`, start: prevPos, end: currPos });
       }
     }
@@ -165,15 +165,16 @@ export default function RobotArm() {
   }, [elements, kinematics.cumulativeMatrices, baseMatrix]);
 
   const endEffectorMatrix = kinematics.endEffectorTransform;
+  const hasVisibleElements = elements.some((el) => !el.hidden);
   const hasEndEffector =
-    elements.length > 0 &&
+    hasVisibleElements &&
     endEffectorMatrix !== identity4();
 
   return (
     <group>
       {/* Joint frames + meshes */}
       {elements.map((element, i) => {
-        if (element.elementKind !== "joint") return null;
+        if (element.elementKind !== "joint" || element.hidden) return null;
         const matrix = kinematics.cumulativeMatrices[i];
         if (!matrix) return null;
         const displayMatrix = getDisplayMatrix(
@@ -192,7 +193,7 @@ export default function RobotArm() {
 
       {/* DH annotations */}
       {elements.map((element, i) => {
-        if (element.elementKind !== "joint") return null;
+        if (element.elementKind !== "joint" || element.hidden) return null;
         const prevMatrix = i === 0
           ? baseMatrix
           : kinematics.cumulativeMatrices[i - 1]!;
@@ -223,7 +224,7 @@ export default function RobotArm() {
 
       {/* Link length labels */}
       {elements.map((element, idx) => {
-        if (element.elementKind !== "link") return null;
+        if (element.elementKind !== "link" || element.hidden) return null;
         const labelMatrix = idx === 0
           ? baseMatrix
           : kinematics.cumulativeMatrices[idx - 1]!;
