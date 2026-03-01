@@ -7,18 +7,23 @@ const DEG_TO_RAD = Math.PI / 180;
 export default function AutoDHJointSliders() {
   const autoElements = useRobotStore((s) => s.autoElements);
   const updateAutoJointVariable = useRobotStore((s) => s.updateAutoJointVariable);
+  const updateAutoPrismaticConfig = useRobotStore((s) => s.updateAutoPrismaticConfig);
 
   if (autoElements.length === 0) return null;
 
   return (
     <div className="space-y-3">
       {autoElements.map((joint, i) => {
+        if (joint.elementKind !== "joint") return null;
         const isRevolute = joint.type === "revolute";
         const displayValue = isRevolute
           ? joint.variableValue * RAD_TO_DEG
           : joint.variableValue;
         const unit = isRevolute ? "deg" : "m";
         const paramName = isRevolute ? "theta" : "d";
+        const resetValue = !isRevolute && joint.prismaticDirection === "retract"
+          ? (joint.prismaticMax ?? joint.maxLimit)
+          : 0;
 
         return (
           <div key={`auto-${i}`} className="space-y-1.5">
@@ -50,11 +55,11 @@ export default function AutoDHJointSliders() {
                   }}
                 />
                 <span className="text-[10px] text-gray-500">{unit}</span>
-                {joint.variableValue !== 0 && (
+                {joint.variableValue !== resetValue && (
                   <button
-                    onClick={() => updateAutoJointVariable(i, 0)}
+                    onClick={() => updateAutoJointVariable(i, resetValue)}
                     className="text-[10px] text-gray-500 hover:text-gray-300 px-1 py-0.5 rounded hover:bg-gray-800 transition-all"
-                    title="Reset to 0"
+                    title={`Reset to ${resetValue}`}
                   >
                     reset
                   </button>
@@ -75,9 +80,54 @@ export default function AutoDHJointSliders() {
               }
               className="w-full"
             />
+            {!isRevolute && (
+              <PrismaticConfig
+                joint={joint}
+                onUpdate={(pMax, pDir) => updateAutoPrismaticConfig(i, pMax, pDir)}
+              />
+            )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function PrismaticConfig({
+  joint,
+  onUpdate,
+}: {
+  joint: { prismaticMax?: number; prismaticDirection?: "extend" | "retract"; maxLimit: number };
+  onUpdate: (prismaticMax: number, prismaticDirection: "extend" | "retract") => void;
+}) {
+  const pMax = joint.prismaticMax ?? joint.maxLimit;
+  const pDir = joint.prismaticDirection ?? "extend";
+
+  return (
+    <div className="flex items-center gap-2 mt-1">
+      <span className="text-[9px] text-gray-600">max:</span>
+      <input
+        type="number"
+        step="any"
+        min="0.1"
+        value={pMax}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (v > 0) onUpdate(v, pDir);
+        }}
+        className="w-14 bg-gray-800/80 border border-gray-700 rounded px-1 py-0.5 text-[10px] text-gray-300 font-mono focus:outline-none focus:border-cyan-500 transition-all"
+      />
+      <button
+        onClick={() => onUpdate(pMax, pDir === "extend" ? "retract" : "extend")}
+        className={`text-[9px] font-medium px-1.5 py-0.5 rounded transition-all ${
+          pDir === "extend"
+            ? "bg-cyan-500/15 text-cyan-400"
+            : "bg-orange-500/15 text-orange-400"
+        }`}
+        title={pDir === "extend" ? "Starts at 0, extends to max" : "Starts at max, retracts to 0"}
+      >
+        {pDir === "extend" ? "Extend" : "Retract"}
+      </button>
     </div>
   );
 }

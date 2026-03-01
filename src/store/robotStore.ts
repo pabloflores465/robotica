@@ -92,6 +92,8 @@ interface RobotState {
   setFrameCustomAngle: (assignmentIndex: number, angle: number) => void;
   /** Update a variable value on auto-DH elements (for joint sliders in auto mode) */
   updateAutoJointVariable: (jointIndex: number, value: number) => void;
+  /** Update prismatic config on auto-DH elements */
+  updateAutoPrismaticConfig: (jointIndex: number, prismaticMax: number, prismaticDirection: "extend" | "retract") => void;
 }
 
 /** Serializable snapshot of the entire diagram */
@@ -547,6 +549,24 @@ export const useRobotStore = create<RobotState>((set) => ({
           return { ...el, variableValue: value };
         }
         return el;
+      });
+      return { autoElements, autoKinematics: recompute(autoElements, identity4()) };
+    });
+  },
+
+  updateAutoPrismaticConfig: (jointIndex, prismaticMax, prismaticDirection) => {
+    set((state) => {
+      const autoElements = state.autoElements.map((el, i) => {
+        if (el.elementKind !== "joint" || i !== jointIndex || el.type !== "prismatic") return el;
+        const clampedValue = Math.min(el.variableValue, prismaticMax);
+        return {
+          ...el,
+          prismaticMax,
+          prismaticDirection,
+          minLimit: 0,
+          maxLimit: prismaticMax,
+          variableValue: clampedValue,
+        };
       });
       return { autoElements, autoKinematics: recompute(autoElements, identity4()) };
     });

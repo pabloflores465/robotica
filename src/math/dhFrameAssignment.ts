@@ -787,7 +787,10 @@ function synthesizeJoints(
       },
       rotationAxis: "z",
       frameAngle: 0,
-      variableValue: 0,
+      variableValue:
+        !isRevolute && worldJoint.prismaticDirection === "retract"
+          ? (worldJoint.prismaticMax ?? worldJoint.maxLimit)
+          : 0,
       minLimit: worldJoint.minLimit,
       maxLimit: worldJoint.maxLimit,
       prismaticMax: worldJoint.prismaticMax,
