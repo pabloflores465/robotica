@@ -41,4 +41,8 @@ export interface Joint {
   minLimit: number;
   /** Max limit for the variable parameter */
   maxLimit: number;
+  /** Maximum extension for prismatic joints (0 to prismaticMax) */
+  prismaticMax?: number;
+  /** Whether prismatic joint starts retracted (extend) or extended (retract) */
+  prismaticDirection?: "extend" | "retract";
 }

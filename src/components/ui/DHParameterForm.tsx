@@ -12,6 +12,8 @@ export default function DHParameterForm() {
   const [alphaDeg, setAlphaDeg] = useState(0);
   const [rotationAxis, setRotationAxis] = useState<RotationAxis>("z");
   const [frameAngleDeg, setFrameAngleDeg] = useState(0);
+  const [prismaticMax, setPrismaticMax] = useState(2);
+  const [prismaticDirection, setPrismaticDirection] = useState<"extend" | "retract">("extend");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,6 +27,9 @@ export default function DHParameterForm() {
       },
       rotationAxis,
       frameAngleDeg * DEG_TO_RAD,
+      undefined,
+      type === "prismatic" ? prismaticMax : undefined,
+      type === "prismatic" ? prismaticDirection : undefined,
     );
   }
 
@@ -117,12 +122,54 @@ export default function DHParameterForm() {
           <span className="text-[10px] text-gray-600">deg</span>
         </div>
         {type === "prismatic" && (
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <span className="text-[10px] text-gray-500">variable:</span>
-            <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded">
-              d
-            </span>
-            <span className="text-[10px] text-gray-600">(slider)</span>
+          <div className="mt-2 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-gray-500">variable:</span>
+              <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded">
+                d
+              </span>
+              <span className="text-[10px] text-gray-600">(0 to max)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-gray-500">max:</span>
+              <input
+                type="number"
+                step="any"
+                min="0.1"
+                value={prismaticMax}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (v > 0) setPrismaticMax(v);
+                }}
+                className="w-16 bg-gray-800/80 border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-gray-200 font-mono focus:outline-none focus:border-cyan-500 transition-all"
+              />
+              <span className="text-[10px] text-gray-600">m</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-gray-500">mode:</span>
+              <button
+                type="button"
+                onClick={() => setPrismaticDirection("extend")}
+                className={`text-[10px] font-medium px-2 py-0.5 rounded transition-all ${
+                  prismaticDirection === "extend"
+                    ? "bg-cyan-500/15 text-cyan-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                Extend
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrismaticDirection("retract")}
+                className={`text-[10px] font-medium px-2 py-0.5 rounded transition-all ${
+                  prismaticDirection === "retract"
+                    ? "bg-cyan-500/15 text-cyan-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                Retract
+              </button>
+            </div>
           </div>
         )}
       </div>

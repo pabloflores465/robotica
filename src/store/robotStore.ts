@@ -36,6 +36,8 @@ interface RobotState {
     rotationAxis?: RotationAxis,
     frameAngle?: number,
     name?: string,
+    prismaticMax?: number,
+    prismaticDirection?: "extend" | "retract",
   ) => void;
   addLink: (
     direction: LinkDirection,
@@ -51,6 +53,7 @@ interface RobotState {
   updateJointVariable: (id: string, value: number) => void;
   updateJointLimits: (id: string, min: number, max: number) => void;
   updateJointType: (id: string, type: JointType) => void;
+  updatePrismaticConfig: (id: string, prismaticMax: number, prismaticDirection: "extend" | "retract") => void;
   updateJointRotationAxis: (id: string, axis: RotationAxis) => void;
   updateJointFrameAngle: (id: string, angle: number) => void;
   updateLinkLength: (id: string, length: number) => void;
@@ -146,8 +149,10 @@ export const useRobotStore = create<RobotState>((set) => ({
   baseRotation: initialBaseRotation,
   baseMatrix: initialBaseMatrix,
 
-  addJoint: (type, dhParams, rotationAxis, frameAngle, name) => {
+  addJoint: (type, dhParams, rotationAxis, frameAngle, name, prismaticMax, prismaticDirection) => {
     jointCounter++;
+    const pMax = prismaticMax ?? 2;
+    const pDir = prismaticDirection ?? "extend";
     const newJoint: Joint = {
       id: crypto.randomUUID(),
       name: name ?? `Joint ${jointCounter}`,
@@ -161,9 +166,11 @@ export const useRobotStore = create<RobotState>((set) => ({
       },
       rotationAxis: rotationAxis ?? "z",
       frameAngle: frameAngle ?? 0,
-      variableValue: 0,
-      minLimit: type === "revolute" ? -Math.PI : -2,
-      maxLimit: type === "revolute" ? Math.PI : 2,
+      variableValue: type === "prismatic" && pDir === "retract" ? pMax : 0,
+      minLimit: type === "revolute" ? -Math.PI : 0,
+      maxLimit: type === "revolute" ? Math.PI : pMax,
+      prismaticMax: type === "prismatic" ? pMax : undefined,
+      prismaticDirection: type === "prismatic" ? pDir : undefined,
     };
     set((state) => {
       const elements = [...state.elements, newJoint];
@@ -230,17 +237,49 @@ export const useRobotStore = create<RobotState>((set) => ({
 
   updateJointType: (id, type) => {
     set((state) => {
-      const elements = state.elements.map((el) =>
-        el.id === id
-          ? {
-              ...el,
-              type,
-              minLimit: type === "revolute" ? -Math.PI : -2,
-              maxLimit: type === "revolute" ? Math.PI : 2,
-              variableValue: 0,
-            }
-          : el,
-      );
+      const elements = state.elements.map((el) => {
+        if (el.id !== id) return el;
+        if (type === "prismatic") {
+          const pMax = el.prismaticMax ?? 2;
+          const pDir = el.prismaticDirection ?? "extend";
+          return {
+            ...el,
+            type,
+            minLimit: 0,
+            maxLimit: pMax,
+            variableValue: pDir === "retract" ? pMax : 0,
+            prismaticMax: pMax,
+            prismaticDirection: pDir,
+          };
+        }
+        return {
+          ...el,
+          type,
+          minLimit: -Math.PI,
+          maxLimit: Math.PI,
+          variableValue: 0,
+          prismaticMax: undefined,
+          prismaticDirection: undefined,
+        };
+      });
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    });
+  },
+
+  updatePrismaticConfig: (id, prismaticMax, prismaticDirection) => {
+    set((state) => {
+      const elements = state.elements.map((el) => {
+        if (el.id !== id || el.type !== "prismatic") return el;
+        const clampedValue = Math.min(el.variableValue, prismaticMax);
+        return {
+          ...el,
+          prismaticMax,
+          prismaticDirection,
+          minLimit: 0,
+          maxLimit: prismaticMax,
+          variableValue: clampedValue,
+        };
+      });
       return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
