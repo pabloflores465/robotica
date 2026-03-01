@@ -4,9 +4,6 @@ import { useRobotStore } from "../../store/robotStore";
 import {
   matrixToThreeMatrix4,
   getPositionFromMatrix,
-  extractFrameAxes,
-  buildFrameMatrix,
-  getPositionVec3,
   identity4,
 } from "../../math/matrixOps";
 import { getEffectiveDHParams } from "../../math/dhTransform";
@@ -107,14 +104,9 @@ export default function RobotArm() {
   const elements = useRobotStore((s) => s.elements);
   const kinematics = useRobotStore((s) => s.kinematics);
   const baseMatrix = useRobotStore((s) => s.baseMatrix);
-  const autoDHMode = useRobotStore((s) => s.autoDHMode);
-  const autoElements = useRobotStore((s) => s.autoElements);
-  const autoKinematics = useRobotStore((s) => s.autoKinematics);
-  const autoBaseFrame = useRobotStore((s) => s.autoBaseFrame);
+  const autoDH = useRobotStore((s) => s.autoDH);
+  const dhFrames = useRobotStore((s) => s.dhFrames);
 
-  const isAuto = autoDHMode && autoElements.length > 0;
-
-  // Tubes: always from manual FK (same as manual mode)
   const links = useMemo(() => {
     const result: LinkData[] = [];
     const baseOrigin = getPositionFromMatrix(baseMatrix);
@@ -133,167 +125,51 @@ export default function RobotArm() {
     return result;
   }, [elements, kinematics.cumulativeMatrices, baseMatrix]);
 
-  // End effector from manual FK
   const endEffectorMatrix = kinematics.endEffectorTransform;
   const hasEndEffector =
     elements.length > 0 &&
     endEffectorMatrix !== identity4();
 
-  // In auto DH mode, build a map from manual joint index -> auto DH rotation
-  const autoFrameRotations = useMemo(() => {
-    if (!isAuto) return null;
-    const map = new Map<number, { x: { x: number; y: number; z: number }; y: { x: number; y: number; z: number }; z: { x: number; y: number; z: number } }>();
-    let autoIdx = 0;
-    for (let i = 0; i < elements.length; i++) {
-      if (elements[i]!.elementKind === "joint") {
-        const autoMatrix = autoIdx < autoKinematics.cumulativeMatrices.length
-          ? autoKinematics.cumulativeMatrices[autoIdx]!
-          : autoKinematics.endEffectorTransform;
-        map.set(i, extractFrameAxes(autoMatrix));
-        autoIdx++;
-      }
-    }
-    return map;
-  }, [isAuto, elements, autoKinematics.cumulativeMatrices, autoKinematics.endEffectorTransform]);
-
   return (
     <group>
-      {/* Joint frames + meshes: manual FK position, auto DH orientation when active */}
+      {/* Joint frames + meshes */}
       {elements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
-        const manualMatrix = kinematics.cumulativeMatrices[i];
-        if (!manualMatrix) return null;
-
-        let frameMatrix: Matrix4x4;
-        if (isAuto && autoFrameRotations) {
-          // Manual FK position + auto DH orientation
-          const axes = autoFrameRotations.get(i);
-          if (axes) {
-            const pos = getPositionVec3(manualMatrix);
-            frameMatrix = buildFrameMatrix(axes.x, axes.y, axes.z, pos);
-          } else {
-            frameMatrix = manualMatrix;
-          }
-        } else {
-          frameMatrix = manualMatrix;
-        }
-
-        return <JointGroup key={element.id} matrix={frameMatrix} joint={element} />;
+        // When Auto DH is on, use DH-oriented frame for display
+        const matrix = (autoDH && dhFrames[i]) ? dhFrames[i] : kinematics.cumulativeMatrices[i];
+        if (!matrix) return null;
+        return <JointGroup key={element.id} matrix={matrix} joint={element} />;
       })}
 
       {/* DH annotations */}
-      {isAuto
-        ? (() => {
-            // Map auto joint index -> manual element index of prev joint
-            const manualJointIndices: number[] = [];
-            for (let m = 0; m < elements.length; m++) {
-              if (elements[m]!.elementKind === "joint") manualJointIndices.push(m);
-            }
-            return autoElements.map((element, i) => {
-              if (element.elementKind !== "joint") return null;
-              // Auto DH orientation from the previous auto frame
-              const autoPrev = i === 0 ? autoBaseFrame : autoKinematics.cumulativeMatrices[i - 1]!;
-              const autoAxes = extractFrameAxes(autoPrev);
-              // Position at the current joint (where the rotation happens)
-              const jointPos = getPositionVec3(kinematics.cumulativeMatrices[manualJointIndices[i]!]!);
-              const annMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, jointPos);
-              const effective = getEffectiveDHParams(element);
-              return (
-                <DHAnnotationGroup
-                  key={`dh-ann-${element.id}`}
-                  matrix={annMatrix}
-                  theta={effective.theta}
-                  d={effective.d}
-                  jointIndex={i}
-                  rotationAxis={element.rotationAxis}
-                  jointType={element.type}
-                />
-              );
-            });
-          })()
-        : elements.map((element, i) => {
-            if (element.elementKind !== "joint") return null;
-            const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
-            const effective = getEffectiveDHParams(element);
-            return (
-              <DHAnnotationGroup
-                key={`dh-ann-${element.id}`}
-                matrix={prevMatrix}
-                theta={effective.theta}
-                d={effective.d}
-                jointIndex={i}
-                rotationAxis={element.rotationAxis}
-                jointType={element.type}
-              />
-            );
-          })
-      }
+      {elements.map((element, i) => {
+        if (element.elementKind !== "joint") return null;
+        const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
+        const effective = getEffectiveDHParams(element);
+        return (
+          <DHAnnotationGroup
+            key={`dh-ann-${element.id}`}
+            matrix={prevMatrix}
+            theta={effective.theta}
+            d={effective.d}
+            jointIndex={i}
+            rotationAxis={element.rotationAxis}
+            jointType={element.type}
+          />
+        );
+      })}
 
       {/* Link length labels */}
       {elements.map((element, idx) => {
         if (element.elementKind !== "link") return null;
-
-        let labelMatrix: Matrix4x4;
-        let labelLength: number;
-        let labelAxis: RotationAxis;
-
-        if (isAuto) {
-          let jointCount = 0;
-          for (let j = 0; j < idx; j++) {
-            if (elements[j]!.elementKind === "joint") jointCount++;
-          }
-          const autoFrame = jointCount === 0
-            ? autoBaseFrame
-            : (jointCount - 1) < autoKinematics.cumulativeMatrices.length
-              ? autoKinematics.cumulativeMatrices[jointCount - 1]!
-              : autoKinematics.endEffectorTransform;
-
-          const manualStart = idx === 0
-            ? baseMatrix
-            : kinematics.cumulativeMatrices[idx - 1]!;
-          const manualEnd = kinematics.cumulativeMatrices[idx]!;
-          const startPos = getPositionVec3(manualStart);
-
-          const autoAxes = extractFrameAxes(autoFrame);
-          labelMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, startPos);
-
-          const endPos = getPositionVec3(manualEnd);
-          const dx = endPos.x - startPos.x;
-          const dy = endPos.y - startPos.y;
-          const dz = endPos.z - startPos.z;
-          const projX = dx * autoAxes.x.x + dy * autoAxes.x.y + dz * autoAxes.x.z;
-          const projY = dx * autoAxes.y.x + dy * autoAxes.y.y + dz * autoAxes.y.z;
-          const projZ = dx * autoAxes.z.x + dy * autoAxes.z.y + dz * autoAxes.z.z;
-
-          if (element.intendedDirection) {
-            labelAxis = element.intendedDirection.charAt(1) as RotationAxis;
-            const sign = element.intendedDirection.charAt(0) === "+" ? 1 : -1;
-            const totalLength = Math.sqrt(
-              element.dhParams.d * element.dhParams.d +
-              element.dhParams.a * element.dhParams.a,
-            );
-            labelLength = sign * totalLength;
-          } else {
-            const absDots = [Math.abs(projX), Math.abs(projY), Math.abs(projZ)];
-            const maxVal = Math.max(absDots[0]!, absDots[1]!, absDots[2]!);
-            const maxDotIdx = absDots.indexOf(maxVal);
-            const axisNames: RotationAxis[] = ["x", "y", "z"];
-            labelAxis = axisNames[maxDotIdx]!;
-            labelLength = [projX, projY, projZ][maxDotIdx]!;
-          }
-        } else {
-          labelMatrix = idx === 0 ? baseMatrix : kinematics.cumulativeMatrices[idx - 1]!;
-          labelLength = element.dhParams.d;
-          labelAxis = element.rotationAxis;
-        }
-
+        const labelMatrix = idx === 0 ? baseMatrix : kinematics.cumulativeMatrices[idx - 1]!;
         return (
           <LinkAnnotationGroup
             key={`link-ann-${element.id}`}
             matrix={labelMatrix}
-            length={labelLength}
+            length={element.dhParams.d}
             linkIndex={idx}
-            rotationAxis={labelAxis}
+            rotationAxis={element.rotationAxis}
           />
         );
       })}

@@ -6,19 +6,15 @@ import DHParameterForm from "./DHParameterForm";
 import LinkForm from "./LinkForm";
 import DHTable from "./DHTable";
 import JointSliders, { ResetAllJointsButton } from "./JointSliders";
-import AutoDHJointSliders from "./AutoDHJointSliders";
 import TransformPanel from "./TransformPanel";
-import AutoDHToggle from "./AutoDHToggle";
 import logger from "../../core/services/logger";
 
 function exportDiagram(): void {
-  const { elements, baseRotation, autoDHMode, frameSelections } = useRobotStore.getState();
+  const { elements, baseRotation } = useRobotStore.getState();
   const data: DiagramData = {
     version: "1.0.0",
     baseRotation,
     elements: elements.map(({ id: _id, ...rest }) => rest),
-    autoDHMode,
-    frameSelections,
   };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -60,10 +56,9 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
   const elements = useRobotStore((s) => s.elements);
   const clearAll = useRobotStore((s) => s.clearAll);
   const importDiagram = useRobotStore((s) => s.importDiagram);
-  const autoDHMode = useRobotStore((s) => s.autoDHMode);
-  const autoElements = useRobotStore((s) => s.autoElements);
+  const autoDH = useRobotStore((s) => s.autoDH);
+  const toggleAutoDH = useRobotStore((s) => s.toggleAutoDH);
   const hasJoints = elements.some((el) => el.elementKind === "joint");
-  const hasAutoJoints = autoElements.length > 0;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -151,6 +146,28 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
           <BaseFrameControls />
         </Section>
 
+        {/* Auto DH toggle */}
+        {hasJoints && (
+          <div className="flex items-center justify-between py-2">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              Auto DH
+            </span>
+            <button
+              onClick={toggleAutoDH}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                autoDH ? "bg-indigo-500" : "bg-gray-700"
+              }`}
+              title="Auto-orient frames using classical DH convention"
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  autoDH ? "translate-x-[18px]" : "translate-x-[3px]"
+                }`}
+              />
+            </button>
+          </div>
+        )}
+
         <Section title="Add Joint" defaultOpen>
           <DHParameterForm />
         </Section>
@@ -159,25 +176,13 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
           <LinkForm />
         </Section>
 
-        {hasJoints && (
-          <Section title="DH Mode" defaultOpen>
-            <AutoDHToggle />
-          </Section>
-        )}
-
         <Section title="Parameters" defaultOpen badge={elements.length > 0 ? `${elements.length}` : undefined}>
           <DHTable />
         </Section>
 
-        {!autoDHMode && hasJoints && (
+        {hasJoints && (
           <Section title="Joint Controls" defaultOpen headerAction={<ResetAllJointsButton />}>
             <JointSliders />
-          </Section>
-        )}
-
-        {autoDHMode && hasAutoJoints && (
-          <Section title="Joint Controls" defaultOpen>
-            <AutoDHJointSliders />
           </Section>
         )}
 

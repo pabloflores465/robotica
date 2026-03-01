@@ -5,18 +5,14 @@ import type {
   DHParameters,
   RotationAxis,
   LinkDirection,
-  DHAutoResult,
-  FrameSelection,
 } from "../core/types/robot";
 import {
   computeForwardKinematics,
   type ForwardKinematicsResult,
 } from "../math/forwardKinematics";
-import { identity4, rotationAroundAxis, multiplyMatrices, extractFrameAxes } from "../math/matrixOps";
+import { computeDHOrientedFrames } from "../math/dhFrameOrientation";
+import { identity4, rotationAroundAxis, multiplyMatrices } from "../math/matrixOps";
 import type { Matrix4x4 } from "../core/types/matrix";
-import { extractWorldJointInfo, assignDHFrames } from "../math/dhFrameAssignment";
-import { dot, negate } from "../math/vec3";
-import type { Vec3 } from "../math/vec3";
 
 /** Euler angles (radians) for the base frame orientation in world space */
 export interface BaseRotation {
@@ -34,99 +30,16 @@ const DIRECTION_MAP: Record<LinkDirection, { axis: RotationAxis; sign: 1 | -1 }>
   "-z": { axis: "z", sign: -1 },
 };
 
-/**
- * Compute link DH params that produce a displacement in the auto DH frame's
- * direction, expressed in the manual chain's local frame.
- *
- * Uses the theta + frameAngle cancellation trick:
- *   Rz(theta) * Tz(d) * Tx(a) * Rx(0)  with frameAngle = -theta
- * produces a pure translation of (a*cos(theta), a*sin(theta), d) with no rotation.
- */
-function computeAutoLinkParams(
-  direction: LinkDirection,
-  length: number,
-  autoFrame: Matrix4x4,
-  manualFrame: Matrix4x4,
-): { dhParams: DHParameters; frameAngle: number; rotationAxis: RotationAxis } {
-  const { axis, sign } = DIRECTION_MAP[direction];
-
-  // Desired world-space unit direction from the auto DH frame
-  const autoAxes = extractFrameAxes(autoFrame);
-  let worldDir: Vec3;
-  if (axis === "x") worldDir = autoAxes.x;
-  else if (axis === "y") worldDir = autoAxes.y;
-  else worldDir = autoAxes.z;
-  if (sign < 0) worldDir = negate(worldDir);
-
-  // Express in manual frame local coordinates
-  const manualAxes = extractFrameAxes(manualFrame);
-  const lx = dot(worldDir, manualAxes.x);
-  const ly = dot(worldDir, manualAxes.y);
-  const lz = dot(worldDir, manualAxes.z);
-
-  // theta + frameAngle cancellation for pure translation (lx, ly, lz) * length
-  const xyMag = Math.sqrt(lx * lx + ly * ly);
-  const theta = xyMag > 1e-9 ? Math.atan2(ly, lx) : 0;
-
-  return {
-    dhParams: {
-      theta,
-      d: lz * length,
-      a: xyMag * length,
-      alpha: 0,
-    },
-    frameAngle: -theta,
-    rotationAxis: "z",
-  };
-}
-
-/**
- * Get the auto DH frame at the position of a link in the manual chain.
- * Counts manual joints before `linkIndex` and uses the corresponding auto FK frame.
- */
-function getAutoFrameForLink(
-  linkIndex: number,
-  elements: Joint[],
-  autoKinematics: ForwardKinematicsResult,
-  autoBaseFrame: Matrix4x4,
-): Matrix4x4 {
-  let jointCount = 0;
-  for (let i = 0; i < linkIndex; i++) {
-    if (elements[i]!.elementKind === "joint") jointCount++;
-  }
-
-  if (jointCount === 0) {
-    return autoBaseFrame;
-  }
-
-  // The auto element at index (jointCount - 1) is the last joint before the link
-  const autoIdx = jointCount - 1;
-  if (autoIdx < autoKinematics.cumulativeMatrices.length) {
-    return autoKinematics.cumulativeMatrices[autoIdx]!;
-  }
-
-  return autoKinematics.endEffectorTransform;
-}
-
 interface RobotState {
   elements: Joint[];
   kinematics: ForwardKinematicsResult;
   baseRotation: BaseRotation;
   /** Base matrix computed from baseRotation (cached) */
   baseMatrix: Matrix4x4;
-
-  /** Auto-DH mode state */
-  autoDHMode: boolean;
-  /** Auto-DH computation result (null when not in auto mode or no joints) */
-  autoResult: DHAutoResult | null;
-  /** Auto-DH elements used for FK/rendering (empty when not in auto mode) */
-  autoElements: Joint[];
-  /** Auto-DH FK result (uses autoElements) */
-  autoKinematics: ForwardKinematicsResult;
-  /** Auto-DH base frame matrix (world-space position + orientation of frame 0) */
-  autoBaseFrame: Matrix4x4;
-  /** Per-frame user selections for non-locked frames */
-  frameSelections: Record<number, FrameSelection>;
+  /** When true, displayed frame orientations follow classical DH convention */
+  autoDH: boolean;
+  /** DH-oriented cumulative matrices (computed when autoDH is true) */
+  dhFrames: Matrix4x4[];
 
   addJoint: (
     type: JointType,
@@ -159,19 +72,9 @@ interface RobotState {
   updateLinkDirection: (id: string, direction: LinkDirection) => void;
   updateElementName: (id: string, name: string) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
+  toggleAutoDH: () => void;
   clearAll: () => void;
   importDiagram: (data: DiagramData) => void;
-
-  /** Toggle auto-DH mode on/off */
-  setAutoDHMode: (enabled: boolean) => void;
-  /** Select a frame option for a specific assignment index */
-  selectFrameOption: (assignmentIndex: number, optionId: string) => void;
-  /** Set custom angle/offset for a specific assignment index */
-  setFrameCustomAngle: (assignmentIndex: number, angle: number) => void;
-  /** Update a variable value on auto-DH elements (for joint sliders in auto mode) */
-  updateAutoJointVariable: (jointIndex: number, value: number) => void;
-  /** Update prismatic config on auto-DH elements */
-  updateAutoPrismaticConfig: (jointIndex: number, prismaticMax: number, prismaticDirection: "extend" | "retract") => void;
 }
 
 /** Serializable snapshot of the entire diagram */
@@ -179,8 +82,6 @@ export interface DiagramData {
   version: string;
   baseRotation: BaseRotation;
   elements: Omit<Joint, "id">[];
-  autoDHMode?: boolean;
-  frameSelections?: Record<number, FrameSelection>;
 }
 
 function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
@@ -191,15 +92,27 @@ function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
   return multiplyMatrices(multiplyMatrices(rx, ry), rz);
 }
 
-function recompute(elements: Joint[], baseMat: Matrix4x4): ForwardKinematicsResult {
+interface RecomputeResult {
+  kinematics: ForwardKinematicsResult;
+  dhFrames: Matrix4x4[];
+}
+
+function recompute(elements: Joint[], baseMat: Matrix4x4, autoDH: boolean): RecomputeResult {
   if (elements.length === 0) {
     return {
-      individualMatrices: [],
-      cumulativeMatrices: [],
-      endEffectorTransform: identity4(),
+      kinematics: {
+        individualMatrices: [],
+        cumulativeMatrices: [],
+        endEffectorTransform: identity4(),
+      },
+      dhFrames: [],
     };
   }
-  return computeForwardKinematics(elements, baseMat);
+  const kinematics = computeForwardKinematics(elements, baseMat);
+  const dhFrames = autoDH
+    ? computeDHOrientedFrames(elements, kinematics.cumulativeMatrices, baseMat)
+    : [];
+  return { kinematics, dhFrames };
 }
 
 const emptyFK: ForwardKinematicsResult = {
@@ -208,45 +121,17 @@ const emptyFK: ForwardKinematicsResult = {
   endEffectorTransform: identity4(),
 };
 
-/** Recompute auto-DH frames from the current manual elements */
-function recomputeAutoDH(
-  elements: Joint[],
-  baseMat: Matrix4x4,
-  selections: Record<number, FrameSelection>,
-): { autoResult: DHAutoResult | null; autoElements: Joint[]; autoKinematics: ForwardKinematicsResult; autoBaseFrame: Matrix4x4 } {
-  const jointElements = elements.filter((el) => el.elementKind === "joint");
-  if (jointElements.length === 0) {
-    return { autoResult: null, autoElements: [], autoKinematics: emptyFK, autoBaseFrame: identity4() };
-  }
-
-  const { joints, endEffectorPosition } = extractWorldJointInfo(elements, baseMat);
-  if (joints.length === 0) {
-    return { autoResult: null, autoElements: [], autoKinematics: emptyFK, autoBaseFrame: identity4() };
-  }
-
-  const autoResult = assignDHFrames(joints, endEffectorPosition, selections);
-  const autoElements = autoResult.elements;
-  const autoBaseFrame = autoResult.baseFrame;
-  const autoKinematics = recompute(autoElements, autoBaseFrame);
-
-  return { autoResult, autoElements, autoKinematics, autoBaseFrame };
-}
-
 const STORAGE_KEY = "dh-diagram";
 
 function saveToStorage(
   elements: Joint[],
   baseRotation: BaseRotation,
-  autoDHMode: boolean,
-  frameSelections: Record<number, FrameSelection>,
 ): void {
   try {
     const data: DiagramData = {
       version: "1.0.0",
       baseRotation,
       elements: elements.map(({ id: _id, ...rest }) => rest),
-      autoDHMode,
-      frameSelections,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -257,8 +142,6 @@ function saveToStorage(
 interface PersistedState {
   elements: Joint[];
   baseRotation: BaseRotation;
-  autoDHMode: boolean;
-  frameSelections: Record<number, FrameSelection>;
 }
 
 function loadFromStorage(): PersistedState | null {
@@ -280,10 +163,6 @@ function loadFromStorage(): PersistedState | null {
     return {
       elements,
       baseRotation: obj.baseRotation as BaseRotation,
-      autoDHMode: typeof obj.autoDHMode === "boolean" ? obj.autoDHMode : false,
-      frameSelections: (typeof obj.frameSelections === "object" && obj.frameSelections !== null
-        ? obj.frameSelections
-        : {}) as Record<number, FrameSelection>,
     };
   } catch {
     return null;
@@ -305,23 +184,16 @@ if (persisted) {
 const initialBaseRotation = persisted?.baseRotation ?? { x: 0, y: 0, z: 0 };
 const initialBaseMatrix = buildBaseMatrix(initialBaseRotation);
 const initialElements = persisted?.elements ?? [];
-const initialAutoDHMode = persisted?.autoDHMode ?? false;
-const initialFrameSelections = persisted?.frameSelections ?? {};
-const initialAuto = initialAutoDHMode
-  ? recomputeAutoDH(initialElements, initialBaseMatrix, initialFrameSelections)
-  : { autoResult: null, autoElements: [], autoKinematics: emptyFK, autoBaseFrame: identity4() };
+const initialAutoDH = false;
+const initialRecompute = recompute(initialElements, initialBaseMatrix, initialAutoDH);
 
 export const useRobotStore = create<RobotState>((set, get) => ({
   elements: initialElements,
-  kinematics: recompute(initialElements, initialBaseMatrix),
+  kinematics: initialRecompute.kinematics,
   baseRotation: initialBaseRotation,
   baseMatrix: initialBaseMatrix,
-  autoDHMode: initialAutoDHMode,
-  autoResult: initialAuto.autoResult,
-  autoElements: initialAuto.autoElements,
-  autoKinematics: initialAuto.autoKinematics,
-  autoBaseFrame: initialAuto.autoBaseFrame,
-  frameSelections: initialFrameSelections,
+  autoDH: initialAutoDH,
+  dhFrames: initialRecompute.dhFrames,
 
   addJoint: (type, dhParams, rotationAxis, frameAngle, name, prismaticMax, prismaticDirection) => {
     jointCounter++;
@@ -348,68 +220,38 @@ export const useRobotStore = create<RobotState>((set, get) => ({
     };
     set((state) => {
       const elements = [...state.elements, newJoint];
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
   addLink: (direction, length, name) => {
-    const state = get();
     linkCounter++;
-
-    if (state.autoDHMode && state.autoElements.length > 0) {
-      // In auto DH mode, the user sees auto-computed frames.
-      // Transform direction from the auto DH frame to the manual chain's frame.
-      const autoFrame = getAutoFrameForLink(
-        state.elements.length,
-        state.elements,
-        state.autoKinematics,
-        state.autoBaseFrame,
-      );
-      const manualFrame = state.kinematics.endEffectorTransform;
-      const params = computeAutoLinkParams(direction, length, autoFrame, manualFrame);
-
-      const newLink: Joint = {
-        id: crypto.randomUUID(),
-        name: name ?? `Link ${linkCounter}`,
-        elementKind: "link",
-        type: "revolute",
-        dhParams: params.dhParams,
-        rotationAxis: params.rotationAxis,
-        frameAngle: params.frameAngle,
-        variableValue: 0,
-        minLimit: 0,
-        maxLimit: 0,
-        intendedDirection: direction,
-      };
-      set((state) => {
-        const elements = [...state.elements, newLink];
-        return { elements, kinematics: recompute(elements, state.baseMatrix) };
-      });
-    } else {
-      const { axis, sign } = DIRECTION_MAP[direction];
-      const newLink: Joint = {
-        id: crypto.randomUUID(),
-        name: name ?? `Link ${linkCounter}`,
-        elementKind: "link",
-        type: "revolute",
-        dhParams: { theta: 0, d: sign * length, a: 0, alpha: 0 },
-        rotationAxis: axis,
-        frameAngle: 0,
-        variableValue: 0,
-        minLimit: 0,
-        maxLimit: 0,
-      };
-      set((state) => {
-        const elements = [...state.elements, newLink];
-        return { elements, kinematics: recompute(elements, state.baseMatrix) };
-      });
-    }
+    const { axis, sign } = DIRECTION_MAP[direction];
+    const newLink: Joint = {
+      id: crypto.randomUUID(),
+      name: name ?? `Link ${linkCounter}`,
+      elementKind: "link",
+      type: "revolute",
+      dhParams: { theta: 0, d: sign * length, a: 0, alpha: 0 },
+      rotationAxis: axis,
+      frameAngle: 0,
+      variableValue: 0,
+      minLimit: 0,
+      maxLimit: 0,
+    };
+    set((state) => {
+      const elements = [...state.elements, newLink];
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+    });
   },
 
   removeElement: (id) => {
     set((state) => {
       const elements = state.elements.filter((el) => el.id !== id);
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -420,7 +262,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           ? { ...el, dhParams: { ...el.dhParams, [param]: value } }
           : el,
       );
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -429,7 +272,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, variableValue: value } : el,
       );
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -443,7 +287,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
             : 0;
         return { ...el, variableValue: resetValue };
       });
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -452,7 +297,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, minLimit: min, maxLimit: max } : el,
       );
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -483,7 +329,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           prismaticDirection: undefined,
         };
       });
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -501,7 +348,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           variableValue: clampedValue,
         };
       });
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -510,7 +358,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, rotationAxis: axis } : el,
       );
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -519,96 +368,38 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, frameAngle: angle } : el,
       );
-      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
   updateLinkLength: (id, length) => {
-    const outerState = get();
-
-    if (outerState.autoDHMode && outerState.autoElements.length > 0) {
-      set((state) => {
-        const elements = state.elements.map((el, idx) => {
-          if (el.id !== id || el.elementKind !== "link") return el;
-          const dir = el.intendedDirection;
-          if (!dir) {
-            // Legacy link without intendedDirection: use simple update
-            const sign = el.dhParams.d >= 0 ? 1 : -1;
-            return { ...el, dhParams: { ...el.dhParams, d: sign * Math.abs(length) } };
-          }
-          const autoFrame = getAutoFrameForLink(
-            idx, state.elements, outerState.autoKinematics, outerState.autoBaseFrame,
-          );
-          const manualFrame = idx > 0
-            ? state.kinematics.cumulativeMatrices[idx - 1]!
-            : state.baseMatrix;
-          const params = computeAutoLinkParams(dir, length, autoFrame, manualFrame);
-          return {
-            ...el,
-            dhParams: params.dhParams,
-            rotationAxis: params.rotationAxis,
-            frameAngle: params.frameAngle,
-          };
-        });
-        return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    set((state) => {
+      const elements = state.elements.map((el) => {
+        if (el.id !== id || el.elementKind !== "link") return el;
+        const sign = el.dhParams.d >= 0 ? 1 : -1;
+        return { ...el, dhParams: { ...el.dhParams, d: sign * Math.abs(length) } };
       });
-    } else {
-      set((state) => {
-        const elements = state.elements.map((el) => {
-          if (el.id !== id || el.elementKind !== "link") return el;
-          const sign = el.dhParams.d >= 0 ? 1 : -1;
-          return { ...el, dhParams: { ...el.dhParams, d: sign * Math.abs(length) } };
-        });
-        return { elements, kinematics: recompute(elements, state.baseMatrix) };
-      });
-    }
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+    });
   },
 
   updateLinkDirection: (id, direction) => {
-    const outerState = get();
-
-    if (outerState.autoDHMode && outerState.autoElements.length > 0) {
-      set((state) => {
-        const elements = state.elements.map((el, idx) => {
-          if (el.id !== id || el.elementKind !== "link") return el;
-          // Recover length from stored DH params
-          const currentLength = Math.sqrt(
-            el.dhParams.d * el.dhParams.d + el.dhParams.a * el.dhParams.a,
-          );
-          const length = currentLength > 1e-9 ? currentLength : Math.abs(el.dhParams.d);
-
-          const autoFrame = getAutoFrameForLink(
-            idx, state.elements, outerState.autoKinematics, outerState.autoBaseFrame,
-          );
-          const manualFrame = idx > 0
-            ? state.kinematics.cumulativeMatrices[idx - 1]!
-            : state.baseMatrix;
-          const params = computeAutoLinkParams(direction, length, autoFrame, manualFrame);
-          return {
-            ...el,
-            dhParams: params.dhParams,
-            rotationAxis: params.rotationAxis,
-            frameAngle: params.frameAngle,
-            intendedDirection: direction,
-          };
-        });
-        return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    set((state) => {
+      const { axis, sign } = DIRECTION_MAP[direction];
+      const elements = state.elements.map((el) => {
+        if (el.id !== id || el.elementKind !== "link") return el;
+        const absLength = Math.abs(el.dhParams.d);
+        return {
+          ...el,
+          rotationAxis: axis,
+          dhParams: { ...el.dhParams, d: sign * absLength },
+        };
       });
-    } else {
-      set((state) => {
-        const { axis, sign } = DIRECTION_MAP[direction];
-        const elements = state.elements.map((el) => {
-          if (el.id !== id || el.elementKind !== "link") return el;
-          const absLength = Math.abs(el.dhParams.d);
-          return {
-            ...el,
-            rotationAxis: axis,
-            dhParams: { ...el.dhParams, d: sign * absLength },
-          };
-        });
-        return { elements, kinematics: recompute(elements, state.baseMatrix) };
-      });
-    }
+      const r = recompute(elements, state.baseMatrix, state.autoDH);
+      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+    });
   },
 
   updateElementName: (id, name) => {
@@ -622,16 +413,21 @@ export const useRobotStore = create<RobotState>((set, get) => ({
   setBaseRotation: (rotation) => {
     const baseMat = buildBaseMatrix(rotation);
     set((state) => {
-      const base = {
+      const r = recompute(state.elements, baseMat, state.autoDH);
+      return {
         baseRotation: rotation,
         baseMatrix: baseMat,
-        kinematics: recompute(state.elements, baseMat),
+        kinematics: r.kinematics,
+        dhFrames: r.dhFrames,
       };
-      if (state.autoDHMode) {
-        const auto = recomputeAutoDH(state.elements, baseMat, state.frameSelections);
-        return { ...base, ...auto };
-      }
-      return base;
+    });
+  },
+
+  toggleAutoDH: () => {
+    set((state) => {
+      const nextAutoDH = !state.autoDH;
+      const r = recompute(state.elements, state.baseMatrix, nextAutoDH);
+      return { autoDH: nextAutoDH, kinematics: r.kinematics, dhFrames: r.dhFrames };
     });
   },
 
@@ -647,19 +443,15 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       return { ...el, id: crypto.randomUUID() };
     });
     const baseMat = buildBaseMatrix(data.baseRotation);
-    const autoDHMode = data.autoDHMode ?? false;
-    const frameSelections = data.frameSelections ?? {};
-    const auto = autoDHMode
-      ? recomputeAutoDH(elements, baseMat, frameSelections)
-      : { autoResult: null, autoElements: [], autoKinematics: emptyFK };
-    set({
-      elements,
-      baseRotation: data.baseRotation,
-      baseMatrix: baseMat,
-      kinematics: recompute(elements, baseMat),
-      autoDHMode,
-      frameSelections,
-      ...auto,
+    set((state) => {
+      const r = recompute(elements, baseMat, state.autoDH);
+      return {
+        elements,
+        baseRotation: data.baseRotation,
+        baseMatrix: baseMat,
+        kinematics: r.kinematics,
+        dhFrames: r.dhFrames,
+      };
     });
   },
 
@@ -671,123 +463,12 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       baseRotation: { x: 0, y: 0, z: 0 },
       baseMatrix: identity4(),
       kinematics: emptyFK,
-      autoDHMode: false,
-      autoResult: null,
-      autoElements: [],
-      autoKinematics: emptyFK,
-      autoBaseFrame: identity4(),
-      frameSelections: {},
-    });
-  },
-
-  setAutoDHMode: (enabled) => {
-    set((state) => {
-      if (enabled) {
-        const auto = recomputeAutoDH(state.elements, state.baseMatrix, state.frameSelections);
-        return { autoDHMode: true, ...auto };
-      }
-      return {
-        autoDHMode: false,
-        autoResult: null,
-        autoElements: [],
-        autoKinematics: emptyFK,
-        autoBaseFrame: identity4(),
-      };
-    });
-  },
-
-  selectFrameOption: (assignmentIndex, optionId) => {
-    set((state) => {
-      const frameSelections = {
-        ...state.frameSelections,
-        [assignmentIndex]: { optionId, customAngle: state.frameSelections[assignmentIndex]?.customAngle ?? 0 },
-      };
-      const auto = recomputeAutoDH(state.elements, state.baseMatrix, frameSelections);
-      return { frameSelections, ...auto };
-    });
-  },
-
-  setFrameCustomAngle: (assignmentIndex, angle) => {
-    set((state) => {
-      const frameSelections = {
-        ...state.frameSelections,
-        [assignmentIndex]: { optionId: "C", customAngle: angle },
-      };
-      const auto = recomputeAutoDH(state.elements, state.baseMatrix, frameSelections);
-      return { frameSelections, ...auto };
-    });
-  },
-
-  updateAutoJointVariable: (jointIndex, value) => {
-    skipAutoRecompute = true;
-    set((state) => {
-      const autoElements = state.autoElements.map((el, i) => {
-        if (el.elementKind === "joint" && i === jointIndex) {
-          return { ...el, variableValue: value };
-        }
-        return el;
-      });
-
-      // Also sync to the corresponding manual joint so manual FK updates
-      let jCount = 0;
-      const elements = state.elements.map((el) => {
-        if (el.elementKind !== "joint") return el;
-        if (jCount === jointIndex) {
-          jCount++;
-          return { ...el, variableValue: value };
-        }
-        jCount++;
-        return el;
-      });
-
-      return {
-        autoElements,
-        autoKinematics: recompute(autoElements, state.autoBaseFrame),
-        elements,
-        kinematics: recompute(elements, state.baseMatrix),
-      };
-    });
-    skipAutoRecompute = false;
-  },
-
-  updateAutoPrismaticConfig: (jointIndex, prismaticMax, prismaticDirection) => {
-    set((state) => {
-      const autoElements = state.autoElements.map((el, i) => {
-        if (el.elementKind !== "joint" || i !== jointIndex || el.type !== "prismatic") return el;
-        const clampedValue = Math.min(el.variableValue, prismaticMax);
-        return {
-          ...el,
-          prismaticMax,
-          prismaticDirection,
-          minLimit: 0,
-          maxLimit: prismaticMax,
-          variableValue: clampedValue,
-        };
-      });
-      return { autoElements, autoKinematics: recompute(autoElements, state.autoBaseFrame) };
+      dhFrames: [],
     });
   },
 }));
 
-// Flag to skip auto DH recomputation when only variable values changed
-let skipAutoRecompute = false;
-
-// Auto-recompute auto-DH when elements change while in auto mode
-let prevElements: Joint[] = initialElements;
-let prevBaseMatrix: Matrix4x4 = initialBaseMatrix;
+// Persist to localStorage on every state change
 useRobotStore.subscribe((state) => {
-  // Save to localStorage
-  saveToStorage(state.elements, state.baseRotation, state.autoDHMode, state.frameSelections);
-
-  // Auto-recompute DH if elements or base changed while in auto mode
-  // Skip if only variable values changed (flagged by updateAutoJointVariable)
-  if (state.autoDHMode && !skipAutoRecompute && (state.elements !== prevElements || state.baseMatrix !== prevBaseMatrix)) {
-    prevElements = state.elements;
-    prevBaseMatrix = state.baseMatrix;
-    const auto = recomputeAutoDH(state.elements, state.baseMatrix, state.frameSelections);
-    useRobotStore.setState(auto);
-  } else {
-    prevElements = state.elements;
-    prevBaseMatrix = state.baseMatrix;
-  }
+  saveToStorage(state.elements, state.baseRotation);
 });
