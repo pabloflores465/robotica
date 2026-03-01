@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRobotStore } from "../../store/robotStore";
-import type { DHParameters, Joint, LinkDirection } from "../../core/types/robot";
+import type { DHParameters, Joint, LinkDirection, DHFrameAssignment } from "../../core/types/robot";
 
 interface EditableNameCellProps {
   name: string;
@@ -214,7 +214,246 @@ function EditableLengthCell({ value, onCommit }: EditableLengthCellProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Read-only cell for auto-DH mode
+// ---------------------------------------------------------------------------
+
+function ReadOnlyCell({
+  value,
+  isDegrees,
+  isVariable,
+  isInvariant,
+}: {
+  value: number;
+  isDegrees: boolean;
+  isVariable: boolean;
+  isInvariant: boolean;
+}) {
+  const displayValue = isDegrees ? (value * RAD_TO_DEG).toFixed(1) : value.toFixed(2);
+
+  const colorClass = isVariable
+    ? "text-indigo-400 font-bold"
+    : isInvariant
+      ? "text-gray-500"
+      : "text-gray-400";
+
+  return (
+    <td
+      className={`py-2 px-2.5 text-right font-mono text-xs ${colorClass}`}
+      title={
+        isVariable
+          ? "Variable (offset)"
+          : isInvariant
+            ? "Invariant across frame options"
+            : "Auto-computed"
+      }
+    >
+      <span className="flex items-center justify-end gap-1">
+        {isInvariant && (
+          <svg className="w-2.5 h-2.5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+          </svg>
+        )}
+        {displayValue}
+      </span>
+    </td>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-DH table
+// ---------------------------------------------------------------------------
+
+function AutoDHTable() {
+  const autoResult = useRobotStore((s) => s.autoResult);
+  const selectFrameOption = useRobotStore((s) => s.selectFrameOption);
+
+  if (!autoResult || autoResult.assignments.length === 0) {
+    return (
+      <div className="text-gray-600 text-xs text-center py-4">
+        No joints to assign frames to.
+      </div>
+    );
+  }
+
+  const { assignments, toolTransform } = autoResult;
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-lg border border-gray-800">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-800/50 text-[11px] text-gray-500 uppercase tracking-wider">
+              <th className="text-left py-2 px-2.5 font-medium">Frame</th>
+              <th className="text-left py-2 px-2.5 font-medium">Axes</th>
+              <th className="text-right py-2 px-2.5 font-medium">theta</th>
+              <th className="text-right py-2 px-2.5 font-medium">d</th>
+              <th className="text-right py-2 px-2.5 font-medium">a</th>
+              <th className="text-right py-2 px-2.5 font-medium">alpha</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/50">
+            {assignments.map((assignment, i) => (
+              <AutoDHRow
+                key={i}
+                index={i}
+                assignment={assignment}
+                isEndEffector={assignment.isEndEffector ?? false}
+                onSelectOption={(optionId) => selectFrameOption(i, optionId)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Tool transform info */}
+      {!toolTransform.isDHCompatible && (
+        <div className="text-[10px] text-amber-400/80 bg-amber-500/10 rounded px-2.5 py-1.5 border border-amber-500/20">
+          End-effector has a non-DH y-component ({toolTransform.localDisplacement.y.toFixed(3)}m).
+          Tool transform shown separately.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AutoDHRow({
+  index,
+  assignment,
+  isEndEffector,
+  onSelectOption,
+}: {
+  index: number;
+  assignment: DHFrameAssignment;
+  isEndEffector: boolean;
+  onSelectOption: (optionId: string) => void;
+}) {
+  const { dhParams, axisRelation, frameLocked, options, selectedOptionId } = assignment;
+
+  const relationLabel: Record<string, string> = {
+    skew: "Skew",
+    parallel: "Par",
+    intersecting: "Int",
+    collinear: "Col",
+  };
+
+  const relationColor: Record<string, string> = {
+    skew: "bg-purple-500/15 text-purple-400",
+    parallel: "bg-blue-500/15 text-blue-400",
+    intersecting: "bg-orange-500/15 text-orange-400",
+    collinear: "bg-teal-500/15 text-teal-400",
+  };
+
+  // Determine invariants from first option (all options share the same invariants)
+  const inv = options.length > 0
+    ? options[0]!.invariants
+    : { aConstant: true, alphaConstant: true, dVaries: false, thetaVaries: false };
+
+  // The variable param is theta for revolute, d for prismatic
+  // In auto-DH mode, the synthesized elements determine which is variable
+  const autoElements = useRobotStore((s) => s.autoElements);
+  const autoEl = autoElements[index];
+  const isRevolute = autoEl ? autoEl.type === "revolute" : true;
+
+  return (
+    <>
+      <tr className="group hover:bg-gray-800/30 transition-colors">
+        {/* Frame label */}
+        <td className="py-2 px-2.5 text-xs text-gray-400">
+          <span className="font-medium">
+            {isEndEffector ? "EE" : `${index}`}
+          </span>
+        </td>
+
+        {/* Axis relation badge */}
+        <td className="py-2 px-2.5">
+          <div className="flex items-center gap-1">
+            {index > 0 && !isEndEffector && (
+              <span
+                className={`text-[9px] font-bold px-1 py-0.5 rounded ${relationColor[axisRelation] ?? ""}`}
+                title={assignment.ruleDescription}
+              >
+                {relationLabel[axisRelation] ?? axisRelation}
+              </span>
+            )}
+            {frameLocked && !isEndEffector && index > 0 && (
+              <svg className="w-3 h-3 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            )}
+          </div>
+        </td>
+
+        {/* DH parameters */}
+        <ReadOnlyCell
+          value={dhParams.theta}
+          isDegrees={true}
+          isVariable={isRevolute}
+          isInvariant={!inv.thetaVaries && !isRevolute}
+        />
+        <ReadOnlyCell
+          value={dhParams.d}
+          isDegrees={false}
+          isVariable={!isRevolute}
+          isInvariant={!inv.dVaries && isRevolute}
+        />
+        <ReadOnlyCell
+          value={dhParams.a}
+          isDegrees={false}
+          isVariable={false}
+          isInvariant={inv.aConstant}
+        />
+        <ReadOnlyCell
+          value={dhParams.alpha}
+          isDegrees={true}
+          isVariable={false}
+          isInvariant={inv.alphaConstant}
+        />
+      </tr>
+
+      {/* Option selector row (only if frame is not locked and has options) */}
+      {!frameLocked && options.length > 1 && !isEndEffector && (
+        <tr className="bg-gray-900/30">
+          <td colSpan={6} className="py-1.5 px-2.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-gray-600 mr-0.5">x_{index}:</span>
+              {options.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => onSelectOption(opt.id)}
+                  className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                    selectedOptionId === opt.id
+                      ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
+                      : "text-gray-500 hover:text-gray-300 hover:bg-gray-800 border border-transparent"
+                  }`}
+                  title={opt.description}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main DHTable component (switches between manual and auto)
+// ---------------------------------------------------------------------------
+
 export default function DHTable() {
+  const autoDHMode = useRobotStore((s) => s.autoDHMode);
+
+  if (autoDHMode) {
+    return <AutoDHTable />;
+  }
+
+  return <ManualDHTable />;
+}
+
+function ManualDHTable() {
   const elements = useRobotStore((s) => s.elements);
   const removeElement = useRobotStore((s) => s.removeElement);
   const updateJointDHParam = useRobotStore((s) => s.updateJointDHParam);

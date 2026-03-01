@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Matrix4x4 } from "../core/types/matrix";
 import type { RotationAxis } from "../core/types/robot";
+import type { Vec3 } from "./vec3";
 
 /** Returns the 4x4 identity matrix. */
 export function identity4(): Matrix4x4 {
@@ -100,4 +101,23 @@ export function formatMatrixElement(
     return (0).toFixed(precision);
   }
   return value.toFixed(precision);
+}
+
+/**
+ * Extracts the frame axes (x, y, z columns of the rotation sub-matrix)
+ * and position from a 4x4 homogeneous transform.
+ */
+export function extractFrameAxes(m: Matrix4x4): { x: Vec3; y: Vec3; z: Vec3 } {
+  return {
+    x: { x: m[0]![0]!, y: m[1]![0]!, z: m[2]![0]! },
+    y: { x: m[0]![1]!, y: m[1]![1]!, z: m[2]![1]! },
+    z: { x: m[0]![2]!, y: m[1]![2]!, z: m[2]![2]! },
+  };
+}
+
+/**
+ * Extracts the position (translation column) from a 4x4 matrix as a Vec3.
+ */
+export function getPositionVec3(m: Matrix4x4): Vec3 {
+  return { x: m[0]![3]!, y: m[1]![3]!, z: m[2]![3]! };
 }

@@ -6,15 +6,19 @@ import DHParameterForm from "./DHParameterForm";
 import LinkForm from "./LinkForm";
 import DHTable from "./DHTable";
 import JointSliders, { ResetAllJointsButton } from "./JointSliders";
+import AutoDHJointSliders from "./AutoDHJointSliders";
 import TransformPanel from "./TransformPanel";
+import AutoDHToggle from "./AutoDHToggle";
 import logger from "../../core/services/logger";
 
 function exportDiagram(): void {
-  const { elements, baseRotation } = useRobotStore.getState();
+  const { elements, baseRotation, autoDHMode, frameSelections } = useRobotStore.getState();
   const data: DiagramData = {
     version: "1.0.0",
     baseRotation,
     elements: elements.map(({ id: _id, ...rest }) => rest),
+    autoDHMode,
+    frameSelections,
   };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -56,7 +60,10 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
   const elements = useRobotStore((s) => s.elements);
   const clearAll = useRobotStore((s) => s.clearAll);
   const importDiagram = useRobotStore((s) => s.importDiagram);
+  const autoDHMode = useRobotStore((s) => s.autoDHMode);
+  const autoElements = useRobotStore((s) => s.autoElements);
   const hasJoints = elements.some((el) => el.elementKind === "joint");
+  const hasAutoJoints = autoElements.length > 0;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -152,13 +159,25 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
           <LinkForm />
         </Section>
 
+        {hasJoints && (
+          <Section title="DH Mode" defaultOpen>
+            <AutoDHToggle />
+          </Section>
+        )}
+
         <Section title="Parameters" defaultOpen badge={elements.length > 0 ? `${elements.length}` : undefined}>
           <DHTable />
         </Section>
 
-        {hasJoints && (
+        {!autoDHMode && hasJoints && (
           <Section title="Joint Controls" defaultOpen headerAction={<ResetAllJointsButton />}>
             <JointSliders />
+          </Section>
+        )}
+
+        {autoDHMode && hasAutoJoints && (
+          <Section title="Joint Controls" defaultOpen>
+            <AutoDHJointSliders />
           </Section>
         )}
 

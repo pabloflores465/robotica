@@ -104,18 +104,27 @@ export default function RobotArm() {
   const elements = useRobotStore((s) => s.elements);
   const kinematics = useRobotStore((s) => s.kinematics);
   const baseMatrix = useRobotStore((s) => s.baseMatrix);
+  const autoDHMode = useRobotStore((s) => s.autoDHMode);
+  const autoElements = useRobotStore((s) => s.autoElements);
+  const autoKinematics = useRobotStore((s) => s.autoKinematics);
+
+  // In auto mode, render using auto-computed elements and kinematics
+  // Auto elements use identity base matrix (frames are in world space already)
+  const activeElements = autoDHMode && autoElements.length > 0 ? autoElements : elements;
+  const activeKinematics = autoDHMode && autoElements.length > 0 ? autoKinematics : kinematics;
+  const activeBaseMatrix = autoDHMode && autoElements.length > 0 ? identity4() : baseMatrix;
 
   const links = useMemo(() => {
     const result: LinkData[] = [];
-    const baseOrigin = getPositionFromMatrix(baseMatrix);
+    const baseOrigin = getPositionFromMatrix(activeBaseMatrix);
 
-    for (let i = 0; i < kinematics.cumulativeMatrices.length; i++) {
+    for (let i = 0; i < activeKinematics.cumulativeMatrices.length; i++) {
       const prevPos =
         i === 0
           ? baseOrigin
-          : getPositionFromMatrix(kinematics.cumulativeMatrices[i - 1]!);
-      const currPos = getPositionFromMatrix(kinematics.cumulativeMatrices[i]!);
-      const element = elements[i];
+          : getPositionFromMatrix(activeKinematics.cumulativeMatrices[i - 1]!);
+      const currPos = getPositionFromMatrix(activeKinematics.cumulativeMatrices[i]!);
+      const element = activeElements[i];
       if (element) {
         result.push({
           key: `link-${element.id}`,
@@ -126,28 +135,28 @@ export default function RobotArm() {
     }
 
     return result;
-  }, [elements, kinematics.cumulativeMatrices]);
+  }, [activeElements, activeKinematics.cumulativeMatrices, activeBaseMatrix]);
 
   // End effector position for the "ghost" frame
-  const endEffectorMatrix = kinematics.endEffectorTransform;
+  const endEffectorMatrix = activeKinematics.endEffectorTransform;
   const hasEndEffector =
-    elements.length > 0 &&
+    activeElements.length > 0 &&
     endEffectorMatrix !== identity4();
 
   return (
     <group>
       {/* Joint coordinate frames -- only for actual joints, not links */}
-      {elements.map((element, i) => {
+      {activeElements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
-        const matrix = kinematics.cumulativeMatrices[i];
+        const matrix = activeKinematics.cumulativeMatrices[i];
         if (!matrix) return null;
         return <JointGroup key={element.id} matrix={matrix} joint={element} />;
       })}
 
       {/* DH parameter annotations -- only for actual joints */}
-      {elements.map((element, i) => {
+      {activeElements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
-        const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
+        const prevMatrix = i === 0 ? activeBaseMatrix : activeKinematics.cumulativeMatrices[i - 1]!;
         const effective = getEffectiveDHParams(element);
         return (
           <DHAnnotationGroup
@@ -162,10 +171,10 @@ export default function RobotArm() {
         );
       })}
 
-      {/* Link length annotations -- only for link elements */}
-      {elements.map((element, i) => {
+      {/* Link length annotations -- only for link elements (manual mode only) */}
+      {!autoDHMode && activeElements.map((element, i) => {
         if (element.elementKind !== "link") return null;
-        const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
+        const prevMatrix = i === 0 ? activeBaseMatrix : activeKinematics.cumulativeMatrices[i - 1]!;
         return (
           <LinkAnnotationGroup
             key={`link-ann-${element.id}`}
