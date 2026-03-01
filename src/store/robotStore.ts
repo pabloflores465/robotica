@@ -57,6 +57,14 @@ interface RobotState {
   updateLinkDirection: (id: string, direction: LinkDirection) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
   clearAll: () => void;
+  importDiagram: (data: DiagramData) => void;
+}
+
+/** Serializable snapshot of the entire diagram */
+export interface DiagramData {
+  version: string;
+  baseRotation: BaseRotation;
+  elements: Omit<Joint, "id">[];
 }
 
 function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
@@ -242,6 +250,27 @@ export const useRobotStore = create<RobotState>((set) => ({
       baseMatrix: baseMat,
       kinematics: recompute(state.elements, baseMat),
     }));
+  },
+
+  importDiagram: (data) => {
+    // Rebuild counters from imported names
+    jointCounter = 0;
+    linkCounter = 0;
+    const elements: Joint[] = data.elements.map((el) => {
+      if (el.elementKind === "joint") {
+        jointCounter++;
+      } else {
+        linkCounter++;
+      }
+      return { ...el, id: crypto.randomUUID() };
+    });
+    const baseMat = buildBaseMatrix(data.baseRotation);
+    set({
+      elements,
+      baseRotation: data.baseRotation,
+      baseMatrix: baseMat,
+      kinematics: recompute(elements, baseMat),
+    });
   },
 
   clearAll: () => {
