@@ -19,12 +19,7 @@ import ThetaArc from "./ThetaArc";
 import DOffsetArrow from "./DOffsetArrow";
 import LinkLengthLabel from "./LinkLengthLabel";
 
-interface JointGroupProps {
-  matrix: Matrix4x4;
-  joint: Joint;
-}
-
-function JointGroup({ matrix, joint }: JointGroupProps) {
+function FrameGroup({ matrix }: { matrix: Matrix4x4 }) {
   const groupRef = useRef<THREE.Group>(null);
   const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
 
@@ -38,6 +33,23 @@ function JointGroup({ matrix, joint }: JointGroupProps) {
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
       <CoordinateFrame size={0.4} showLabels />
+    </group>
+  );
+}
+
+function JointMeshGroup({ matrix, joint }: { matrix: Matrix4x4; joint: Joint }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.matrix.copy(threeMatrix);
+      groupRef.current.matrixWorldNeedsUpdate = true;
+    }
+  }, [threeMatrix]);
+
+  return (
+    <group ref={groupRef} matrixAutoUpdate={false}>
       <JointMesh type={joint.type} rotationAxis={joint.rotationAxis} />
     </group>
   );
@@ -152,12 +164,20 @@ export default function RobotArm() {
 
   return (
     <group>
-      {/* Joint coordinate frames -- only for actual joints, not links */}
+      {/* Coordinate frames at auto DH positions (or manual in manual mode) */}
       {activeElements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
         const matrix = activeKinematics.cumulativeMatrices[i];
         if (!matrix) return null;
-        return <JointGroup key={element.id} matrix={matrix} joint={element} />;
+        return <FrameGroup key={`frame-${element.id}`} matrix={matrix} />;
+      })}
+
+      {/* Joint meshes at physical positions (manual FK) */}
+      {elements.map((element, i) => {
+        if (element.elementKind !== "joint") return null;
+        const matrix = kinematics.cumulativeMatrices[i];
+        if (!matrix) return null;
+        return <JointMeshGroup key={`mesh-${element.id}`} matrix={matrix} joint={element} />;
       })}
 
       {/* DH parameter annotations -- only for actual joints */}
