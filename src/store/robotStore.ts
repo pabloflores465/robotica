@@ -47,6 +47,8 @@ interface RobotState {
   autoElements: Joint[];
   /** Auto-DH FK result (uses autoElements) */
   autoKinematics: ForwardKinematicsResult;
+  /** Auto-DH base frame matrix (world-space position + orientation of frame 0) */
+  autoBaseFrame: Matrix4x4;
   /** Per-frame user selections for non-locked frames */
   frameSelections: Record<number, FrameSelection>;
 
@@ -135,22 +137,23 @@ function recomputeAutoDH(
   elements: Joint[],
   baseMat: Matrix4x4,
   selections: Record<number, FrameSelection>,
-): { autoResult: DHAutoResult | null; autoElements: Joint[]; autoKinematics: ForwardKinematicsResult } {
+): { autoResult: DHAutoResult | null; autoElements: Joint[]; autoKinematics: ForwardKinematicsResult; autoBaseFrame: Matrix4x4 } {
   const jointElements = elements.filter((el) => el.elementKind === "joint");
   if (jointElements.length === 0) {
-    return { autoResult: null, autoElements: [], autoKinematics: emptyFK };
+    return { autoResult: null, autoElements: [], autoKinematics: emptyFK, autoBaseFrame: identity4() };
   }
 
   const { joints, endEffectorPosition } = extractWorldJointInfo(elements, baseMat);
   if (joints.length === 0) {
-    return { autoResult: null, autoElements: [], autoKinematics: emptyFK };
+    return { autoResult: null, autoElements: [], autoKinematics: emptyFK, autoBaseFrame: identity4() };
   }
 
   const autoResult = assignDHFrames(joints, endEffectorPosition, selections);
   const autoElements = autoResult.elements;
-  const autoKinematics = recompute(autoElements, identity4());
+  const autoBaseFrame = autoResult.baseFrame;
+  const autoKinematics = recompute(autoElements, autoBaseFrame);
 
-  return { autoResult, autoElements, autoKinematics };
+  return { autoResult, autoElements, autoKinematics, autoBaseFrame };
 }
 
 const STORAGE_KEY = "dh-diagram";
@@ -230,7 +233,7 @@ const initialAutoDHMode = persisted?.autoDHMode ?? false;
 const initialFrameSelections = persisted?.frameSelections ?? {};
 const initialAuto = initialAutoDHMode
   ? recomputeAutoDH(initialElements, initialBaseMatrix, initialFrameSelections)
-  : { autoResult: null, autoElements: [], autoKinematics: emptyFK };
+  : { autoResult: null, autoElements: [], autoKinematics: emptyFK, autoBaseFrame: identity4() };
 
 export const useRobotStore = create<RobotState>((set) => ({
   elements: initialElements,
@@ -241,6 +244,7 @@ export const useRobotStore = create<RobotState>((set) => ({
   autoResult: initialAuto.autoResult,
   autoElements: initialAuto.autoElements,
   autoKinematics: initialAuto.autoKinematics,
+  autoBaseFrame: initialAuto.autoBaseFrame,
   frameSelections: initialFrameSelections,
 
   addJoint: (type, dhParams, rotationAxis, frameAngle, name, prismaticMax, prismaticDirection) => {
@@ -501,6 +505,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       autoResult: null,
       autoElements: [],
       autoKinematics: emptyFK,
+      autoBaseFrame: identity4(),
       frameSelections: {},
     });
   },
@@ -516,6 +521,7 @@ export const useRobotStore = create<RobotState>((set) => ({
         autoResult: null,
         autoElements: [],
         autoKinematics: emptyFK,
+        autoBaseFrame: identity4(),
       };
     });
   },
@@ -550,7 +556,7 @@ export const useRobotStore = create<RobotState>((set) => ({
         }
         return el;
       });
-      return { autoElements, autoKinematics: recompute(autoElements, identity4()) };
+      return { autoElements, autoKinematics: recompute(autoElements, state.autoBaseFrame) };
     });
   },
 
@@ -568,7 +574,7 @@ export const useRobotStore = create<RobotState>((set) => ({
           variableValue: clampedValue,
         };
       });
-      return { autoElements, autoKinematics: recompute(autoElements, identity4()) };
+      return { autoElements, autoKinematics: recompute(autoElements, state.autoBaseFrame) };
     });
   },
 }));

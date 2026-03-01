@@ -146,6 +146,8 @@ export interface DHAutoResult {
   toolTransform: ToolTransform;
   /** Synthesized Joint[] for FK (all rotationAxis "z") */
   elements: Joint[];
+  /** Base frame matrix (world-space position + orientation of frame 0) */
+  baseFrame: Matrix4x4;
   /** Diagnostic messages */
   diagnostics: string[];
 }

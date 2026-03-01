@@ -121,3 +121,22 @@ export function extractFrameAxes(m: Matrix4x4): { x: Vec3; y: Vec3; z: Vec3 } {
 export function getPositionVec3(m: Matrix4x4): Vec3 {
   return { x: m[0]![3]!, y: m[1]![3]!, z: m[2]![3]! };
 }
+
+/**
+ * Builds a 4x4 homogeneous transform from frame axes and origin.
+ * Columns of the rotation sub-matrix are x, y, z axes.
+ * Translation column is the origin.
+ */
+export function buildFrameMatrix(
+  x: Vec3,
+  y: Vec3,
+  z: Vec3,
+  origin: Vec3,
+): Matrix4x4 {
+  return [
+    [x.x, y.x, z.x, origin.x],
+    [x.y, y.y, z.y, origin.y],
+    [x.z, y.z, z.z, origin.z],
+    [0, 0, 0, 1],
+  ];
+}

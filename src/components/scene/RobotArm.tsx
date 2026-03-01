@@ -107,12 +107,13 @@ export default function RobotArm() {
   const autoDHMode = useRobotStore((s) => s.autoDHMode);
   const autoElements = useRobotStore((s) => s.autoElements);
   const autoKinematics = useRobotStore((s) => s.autoKinematics);
+  const autoBaseFrame = useRobotStore((s) => s.autoBaseFrame);
 
   // In auto mode, render using auto-computed elements and kinematics
-  // Auto elements use identity base matrix (frames are in world space already)
+  // Auto elements use the auto base frame (frame 0 world-space position + orientation)
   const activeElements = autoDHMode && autoElements.length > 0 ? autoElements : elements;
   const activeKinematics = autoDHMode && autoElements.length > 0 ? autoKinematics : kinematics;
-  const activeBaseMatrix = autoDHMode && autoElements.length > 0 ? identity4() : baseMatrix;
+  const activeBaseMatrix = autoDHMode && autoElements.length > 0 ? autoBaseFrame : baseMatrix;
 
   const links = useMemo(() => {
     const result: LinkData[] = [];

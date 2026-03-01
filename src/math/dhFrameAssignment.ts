@@ -45,7 +45,7 @@ import {
   EPS_REL,
 } from "./vec3";
 import { computeForwardKinematics } from "./forwardKinematics";
-import { extractFrameAxes, getPositionVec3, identity4 } from "./matrixOps";
+import { extractFrameAxes, getPositionVec3, identity4, buildFrameMatrix } from "./matrixOps";
 
 // ---------------------------------------------------------------------------
 // World joint info extraction
@@ -400,6 +400,7 @@ export function assignDHFrames(
       assignments: [],
       toolTransform: buildIdentityToolTransform(),
       elements: [],
+      baseFrame: identity4(),
       diagnostics: ["No joints to assign frames to."],
     };
   }
@@ -691,7 +692,17 @@ export function assignDHFrames(
   // Synthesize Joint[] for FK
   const synthesizedElements = synthesizeJoints(assignments, worldJoints, toolTransform);
 
-  return { assignments, toolTransform, elements: synthesizedElements, diagnostics };
+  // Build base frame matrix from frame 0 origin and axes
+  const baseFrame = assignments.length > 0
+    ? buildFrameMatrix(
+        assignments[0]!.frameAxes.x,
+        assignments[0]!.frameAxes.y,
+        assignments[0]!.frameAxes.z,
+        assignments[0]!.frameOrigin,
+      )
+    : identity4();
+
+  return { assignments, toolTransform, elements: synthesizedElements, baseFrame, diagnostics };
 }
 
 // ---------------------------------------------------------------------------
