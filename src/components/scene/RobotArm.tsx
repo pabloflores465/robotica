@@ -118,17 +118,20 @@ export default function RobotArm() {
   const activeKinematics = autoDHMode && autoElements.length > 0 ? autoKinematics : kinematics;
   const activeBaseMatrix = autoDHMode && autoElements.length > 0 ? autoBaseFrame : baseMatrix;
 
+  // Always use manual FK for tube rendering so the physical path follows
+  // through each link segment (e.g. L5 -Z then L6 +X) instead of drawing
+  // a single straight line between joints in auto DH mode.
   const links = useMemo(() => {
     const result: LinkData[] = [];
-    const baseOrigin = getPositionFromMatrix(activeBaseMatrix);
+    const baseOrigin = getPositionFromMatrix(baseMatrix);
 
-    for (let i = 0; i < activeKinematics.cumulativeMatrices.length; i++) {
+    for (let i = 0; i < kinematics.cumulativeMatrices.length; i++) {
       const prevPos =
         i === 0
           ? baseOrigin
-          : getPositionFromMatrix(activeKinematics.cumulativeMatrices[i - 1]!);
-      const currPos = getPositionFromMatrix(activeKinematics.cumulativeMatrices[i]!);
-      const element = activeElements[i];
+          : getPositionFromMatrix(kinematics.cumulativeMatrices[i - 1]!);
+      const currPos = getPositionFromMatrix(kinematics.cumulativeMatrices[i]!);
+      const element = elements[i];
       if (element) {
         result.push({
           key: `link-${element.id}`,
@@ -139,7 +142,7 @@ export default function RobotArm() {
     }
 
     return result;
-  }, [activeElements, activeKinematics.cumulativeMatrices, activeBaseMatrix]);
+  }, [elements, kinematics.cumulativeMatrices, baseMatrix]);
 
   // End effector position for the "ghost" frame
   const endEffectorMatrix = activeKinematics.endEffectorTransform;
