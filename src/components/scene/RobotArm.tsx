@@ -164,12 +164,31 @@ export default function RobotArm() {
 
   return (
     <group>
-      {/* Coordinate frames at auto DH positions (or manual in manual mode) */}
-      {activeElements.map((element, i) => {
+      {/* Coordinate frames: auto DH orientation at physical joint position */}
+      {elements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
-        const matrix = activeKinematics.cumulativeMatrices[i];
-        if (!matrix) return null;
-        return <FrameGroup key={`frame-${element.id}`} matrix={matrix} />;
+        const manualMatrix = kinematics.cumulativeMatrices[i];
+        if (!manualMatrix) return null;
+
+        let frameMatrix: Matrix4x4;
+        if (autoDHMode && autoElements.length > 0) {
+          // Count which auto joint index this corresponds to
+          let autoIdx = 0;
+          for (let j = 0; j < i; j++) {
+            if (elements[j]!.elementKind === "joint") autoIdx++;
+          }
+          const autoMatrix = autoIdx < autoKinematics.cumulativeMatrices.length
+            ? autoKinematics.cumulativeMatrices[autoIdx]!
+            : autoKinematics.endEffectorTransform;
+          // Auto DH rotation + manual FK position
+          const autoAxes = extractFrameAxes(autoMatrix);
+          const manualPos = getPositionVec3(manualMatrix);
+          frameMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, manualPos);
+        } else {
+          frameMatrix = manualMatrix;
+        }
+
+        return <FrameGroup key={`frame-${element.id}`} matrix={frameMatrix} />;
       })}
 
       {/* Joint meshes at physical positions (manual FK) */}
