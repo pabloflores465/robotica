@@ -1,5 +1,6 @@
 import { useRobotStore } from "../../store/robotStore";
 import type { BaseRotation } from "../../store/robotStore";
+import type { RotationAxis } from "../../core/types/robot";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -46,7 +47,9 @@ export default function BaseFrameControls() {
   const baseRotation = useRobotStore((s) => s.baseRotation);
   const setBaseRotation = useRobotStore((s) => s.setBaseRotation);
   const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
+  const revoluteFrameAxis = useRobotStore((s) => s.revoluteFrameAxis);
   const setRevoluteAroundZOnly = useRobotStore((s) => s.setRevoluteAroundZOnly);
+  const setRevoluteFrameAxis = useRobotStore((s) => s.setRevoluteFrameAxis);
 
   function handleAngleChange(axis: keyof BaseRotation, deg: number) {
     setBaseRotation({ ...baseRotation, [axis]: deg * DEG_TO_RAD });
@@ -113,20 +116,27 @@ export default function BaseFrameControls() {
         <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
           Revolute Axis Mode
         </label>
-        <button
-          type="button"
-          onClick={() => setRevoluteAroundZOnly(!revoluteAroundZOnly)}
-          className={`w-full px-2.5 py-2 rounded-md text-xs font-medium transition-all text-left ${
-            revoluteAroundZOnly
-              ? "bg-blue-600/20 text-blue-300 ring-1 ring-blue-400/60"
-              : "bg-gray-800/80 text-gray-300 hover:bg-gray-700"
-          }`}
-          title="Reorienta el marco del joint para que Z apunte al eje seleccionado sin cambiar el giro real"
+        <select
+          value={revoluteAroundZOnly ? revoluteFrameAxis : "off"}
+          onChange={(e) => {
+            const mode = e.target.value as "off" | RotationAxis;
+            if (mode === "off") {
+              setRevoluteAroundZOnly(false);
+              return;
+            }
+            setRevoluteFrameAxis(mode);
+            setRevoluteAroundZOnly(true);
+          }}
+          className="w-full bg-gray-800/80 border border-gray-700 rounded-md px-2.5 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-all"
+          title="Selecciona el eje de referencia del marco remapeado (X/Y/Z) o apaga el modo"
         >
-          {revoluteAroundZOnly ? "Z follows selected axis (ON)" : "Use raw axis labels (OFF)"}
-        </button>
+          <option value="off">OFF (raw labels)</option>
+          <option value="x">X reference</option>
+          <option value="y">Y reference</option>
+          <option value="z">Z reference</option>
+        </select>
         <p className="mt-1 text-[10px] text-gray-500 leading-snug">
-          ON: el marco se remapea para que Z quede sobre el eje elegido (X/Y/Z), manteniendo el mismo giro del joint.
+          El eje elegido (X/Y/Z) se remapea al eje real del joint, manteniendo exactamente el mismo giro fisico.
         </p>
       </div>
     </div>

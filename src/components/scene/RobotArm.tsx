@@ -102,15 +102,17 @@ interface LinkData {
   end: THREE.Vector3;
 }
 
-function getRevoluteFrameRemap(axis: RotationAxis): Matrix4x4 {
-  if (axis === "x") {
-    // Rotate frame so local Z aligns with original X
-    return rotationAroundAxis("y", Math.PI / 2);
-  }
-  if (axis === "y") {
-    // Rotate frame so local Z aligns with original Y
-    return rotationAroundAxis("x", -Math.PI / 2);
-  }
+function getAxisAlignmentRotation(
+  fromAxis: RotationAxis,
+  toAxis: RotationAxis,
+): Matrix4x4 {
+  if (fromAxis === toAxis) return identity4();
+  if (fromAxis === "x" && toAxis === "y") return rotationAroundAxis("z", Math.PI / 2);
+  if (fromAxis === "x" && toAxis === "z") return rotationAroundAxis("y", -Math.PI / 2);
+  if (fromAxis === "y" && toAxis === "x") return rotationAroundAxis("z", -Math.PI / 2);
+  if (fromAxis === "y" && toAxis === "z") return rotationAroundAxis("x", Math.PI / 2);
+  if (fromAxis === "z" && toAxis === "x") return rotationAroundAxis("y", Math.PI / 2);
+  if (fromAxis === "z" && toAxis === "y") return rotationAroundAxis("x", -Math.PI / 2);
   return identity4();
 }
 
@@ -118,16 +120,21 @@ function getDisplayMatrix(
   matrix: Matrix4x4,
   joint: Joint,
   revoluteAroundZOnly: boolean,
+  revoluteFrameAxis: RotationAxis,
 ): Matrix4x4 {
   if (!revoluteAroundZOnly || joint.type !== "revolute") return matrix;
-  return multiplyMatrices(matrix, getRevoluteFrameRemap(joint.rotationAxis));
+  return multiplyMatrices(
+    matrix,
+    getAxisAlignmentRotation(revoluteFrameAxis, joint.rotationAxis),
+  );
 }
 
 function getDisplayAxis(
   joint: Joint,
   revoluteAroundZOnly: boolean,
+  revoluteFrameAxis: RotationAxis,
 ): RotationAxis {
-  if (revoluteAroundZOnly && joint.type === "revolute") return "z";
+  if (revoluteAroundZOnly && joint.type === "revolute") return revoluteFrameAxis;
   return joint.rotationAxis;
 }
 
@@ -137,6 +144,7 @@ export default function RobotArm() {
   const kinematics = useRobotStore((s) => s.kinematics);
   const baseMatrix = useRobotStore((s) => s.baseMatrix);
   const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
+  const revoluteFrameAxis = useRobotStore((s) => s.revoluteFrameAxis);
 
   const links = useMemo(() => {
     const result: LinkData[] = [];
@@ -168,8 +176,17 @@ export default function RobotArm() {
         if (element.elementKind !== "joint") return null;
         const matrix = kinematics.cumulativeMatrices[i];
         if (!matrix) return null;
-        const displayMatrix = getDisplayMatrix(matrix, element, revoluteAroundZOnly);
-        const displayAxis = getDisplayAxis(element, revoluteAroundZOnly);
+        const displayMatrix = getDisplayMatrix(
+          matrix,
+          element,
+          revoluteAroundZOnly,
+          revoluteFrameAxis,
+        );
+        const displayAxis = getDisplayAxis(
+          element,
+          revoluteAroundZOnly,
+          revoluteFrameAxis,
+        );
         return <JointGroup key={element.id} matrix={displayMatrix} joint={element} displayAxis={displayAxis} />;
       })}
 
@@ -180,8 +197,17 @@ export default function RobotArm() {
           ? baseMatrix
           : kinematics.cumulativeMatrices[i - 1]!;
         const effective = getEffectiveDHParams(element);
-        const annotationMatrix = getDisplayMatrix(prevMatrix, element, revoluteAroundZOnly);
-        const annotationAxis = getDisplayAxis(element, revoluteAroundZOnly);
+        const annotationMatrix = getDisplayMatrix(
+          prevMatrix,
+          element,
+          revoluteAroundZOnly,
+          revoluteFrameAxis,
+        );
+        const annotationAxis = getDisplayAxis(
+          element,
+          revoluteAroundZOnly,
+          revoluteFrameAxis,
+        );
         return (
           <DHAnnotationGroup
             key={`dh-ann-${element.id}`}

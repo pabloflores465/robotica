@@ -20,6 +20,8 @@ export interface BaseRotation {
   z: number;
 }
 
+export type RevoluteFrameAxisMode = "off" | RotationAxis;
+
 const DIRECTION_MAP: Record<LinkDirection, { axis: RotationAxis; sign: 1 | -1 }> = {
   "+x": { axis: "x", sign: 1 },
   "-x": { axis: "x", sign: -1 },
@@ -37,6 +39,8 @@ interface RobotState {
   baseMatrix: Matrix4x4;
   /** If true, revolute joint frames are remapped so local Z matches the selected axis */
   revoluteAroundZOnly: boolean;
+  /** Which local axis (X/Y/Z) is used as reference when frame remap mode is enabled */
+  revoluteFrameAxis: RotationAxis;
 
   addJoint: (
     type: JointType,
@@ -70,6 +74,7 @@ interface RobotState {
   updateElementName: (id: string, name: string) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
   setRevoluteAroundZOnly: (enabled: boolean) => void;
+  setRevoluteFrameAxis: (axis: RotationAxis) => void;
   clearAll: () => void;
   importDiagram: (data: DiagramData) => void;
 }
@@ -80,6 +85,7 @@ export interface DiagramData {
   baseRotation: BaseRotation;
   elements: Omit<Joint, "id">[];
   revoluteAroundZOnly?: boolean;
+  revoluteFrameAxis?: RotationAxis;
 }
 
 function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
@@ -117,13 +123,15 @@ function saveToStorage(
   elements: Joint[],
   baseRotation: BaseRotation,
   revoluteAroundZOnly: boolean,
+  revoluteFrameAxis: RotationAxis,
 ): void {
   try {
     const data: DiagramData = {
-      version: "1.1.0",
+      version: "1.2.0",
       baseRotation,
       elements: elements.map(({ id: _id, ...rest }) => rest),
       revoluteAroundZOnly,
+      revoluteFrameAxis,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -135,6 +143,7 @@ interface PersistedState {
   elements: Joint[];
   baseRotation: BaseRotation;
   revoluteAroundZOnly: boolean;
+  revoluteFrameAxis: RotationAxis;
 }
 
 function loadFromStorage(): PersistedState | null {
@@ -152,6 +161,14 @@ function loadFromStorage(): PersistedState | null {
     ) {
       return null;
     }
+    if (
+      obj.revoluteFrameAxis !== undefined &&
+      obj.revoluteFrameAxis !== "x" &&
+      obj.revoluteFrameAxis !== "y" &&
+      obj.revoluteFrameAxis !== "z"
+    ) {
+      return null;
+    }
     const br = obj.baseRotation as Record<string, unknown>;
     if (typeof br.x !== "number" || typeof br.y !== "number" || typeof br.z !== "number") return null;
     const elements: Joint[] = (obj.elements as Omit<Joint, "id">[]).map((el) => ({
@@ -162,6 +179,7 @@ function loadFromStorage(): PersistedState | null {
       elements,
       baseRotation: obj.baseRotation as BaseRotation,
       revoluteAroundZOnly: (obj.revoluteAroundZOnly as boolean | undefined) ?? false,
+      revoluteFrameAxis: (obj.revoluteFrameAxis as RotationAxis | undefined) ?? "z",
     };
   } catch {
     return null;
@@ -184,6 +202,7 @@ const initialBaseRotation = persisted?.baseRotation ?? { x: 0, y: 0, z: 0 };
 const initialBaseMatrix = buildBaseMatrix(initialBaseRotation);
 const initialElements = persisted?.elements ?? [];
 const initialRevoluteAroundZOnly = persisted?.revoluteAroundZOnly ?? false;
+const initialRevoluteFrameAxis = persisted?.revoluteFrameAxis ?? "z";
 const initialRecompute = recompute(
   initialElements,
   initialBaseMatrix,
@@ -196,6 +215,7 @@ export const useRobotStore = create<RobotState>((set) => ({
   baseRotation: initialBaseRotation,
   baseMatrix: initialBaseMatrix,
   revoluteAroundZOnly: initialRevoluteAroundZOnly,
+  revoluteFrameAxis: initialRevoluteFrameAxis,
 
   addJoint: (type, dhParams, rotationAxis, frameAngle, name, prismaticMax, prismaticDirection) => {
     jointCounter++;
@@ -434,10 +454,17 @@ export const useRobotStore = create<RobotState>((set) => ({
     });
   },
 
+  setRevoluteFrameAxis: (axis) => {
+    set(() => ({
+      revoluteFrameAxis: axis,
+    }));
+  },
+
   importDiagram: (data) => {
     jointCounter = 0;
     linkCounter = 0;
     const revoluteAroundZOnly = data.revoluteAroundZOnly ?? false;
+    const revoluteFrameAxis = data.revoluteFrameAxis ?? "z";
     const elements: Joint[] = data.elements.map((el) => {
       if (el.elementKind === "joint") {
         jointCounter++;
@@ -453,6 +480,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       baseRotation: data.baseRotation,
       baseMatrix: baseMat,
       revoluteAroundZOnly,
+      revoluteFrameAxis,
       kinematics,
     });
   },
@@ -465,6 +493,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       baseRotation: { x: 0, y: 0, z: 0 },
       baseMatrix: identity4(),
       revoluteAroundZOnly: false,
+      revoluteFrameAxis: "z",
       kinematics: emptyFK,
     });
   },
@@ -472,5 +501,10 @@ export const useRobotStore = create<RobotState>((set) => ({
 
 // Persist to localStorage on every state change
 useRobotStore.subscribe((state) => {
-  saveToStorage(state.elements, state.baseRotation, state.revoluteAroundZOnly);
+  saveToStorage(
+    state.elements,
+    state.baseRotation,
+    state.revoluteAroundZOnly,
+    state.revoluteFrameAxis,
+  );
 });

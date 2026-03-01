@@ -10,12 +10,18 @@ import TransformPanel from "./TransformPanel";
 import logger from "../../core/services/logger";
 
 function exportDiagram(): void {
-  const { elements, baseRotation, revoluteAroundZOnly } = useRobotStore.getState();
+  const {
+    elements,
+    baseRotation,
+    revoluteAroundZOnly,
+    revoluteFrameAxis,
+  } = useRobotStore.getState();
   const data: DiagramData = {
-    version: "1.1.0",
+    version: "1.2.0",
     baseRotation,
     elements: elements.map(({ id: _id, ...rest }) => rest),
     revoluteAroundZOnly,
+    revoluteFrameAxis,
   };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -36,6 +42,12 @@ function validateDiagramData(raw: unknown): DiagramData | null {
   if (typeof br.x !== "number" || typeof br.y !== "number" || typeof br.z !== "number") return null;
   if (!Array.isArray(obj.elements)) return null;
   if (obj.revoluteAroundZOnly !== undefined && typeof obj.revoluteAroundZOnly !== "boolean") return null;
+  if (
+    obj.revoluteFrameAxis !== undefined &&
+    obj.revoluteFrameAxis !== "x" &&
+    obj.revoluteFrameAxis !== "y" &&
+    obj.revoluteFrameAxis !== "z"
+  ) return null;
 
   for (const el of obj.elements) {
     if (typeof el !== "object" || el === null) return null;
