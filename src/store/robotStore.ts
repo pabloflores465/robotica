@@ -55,6 +55,7 @@ interface RobotState {
   updateJointFrameAngle: (id: string, angle: number) => void;
   updateLinkLength: (id: string, length: number) => void;
   updateLinkDirection: (id: string, direction: LinkDirection) => void;
+  updateElementName: (id: string, name: string) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
   clearAll: () => void;
   importDiagram: (data: DiagramData) => void;
@@ -241,6 +242,14 @@ export const useRobotStore = create<RobotState>((set) => ({
       });
       return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
+  },
+
+  updateElementName: (id, name) => {
+    set((state) => ({
+      elements: state.elements.map((el) =>
+        el.id === id ? { ...el, name } : el,
+      ),
+    }));
   },
 
   setBaseRotation: (rotation) => {

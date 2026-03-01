@@ -1,6 +1,66 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRobotStore } from "../../store/robotStore";
 import type { DHParameters, Joint, LinkDirection } from "../../core/types/robot";
+
+interface EditableNameCellProps {
+  name: string;
+  onCommit: (name: string) => void;
+}
+
+function EditableNameCell({ name, onCommit }: EditableNameCellProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = useCallback(() => {
+    setDraft(name);
+    setEditing(true);
+  }, [name]);
+
+  const commit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== name) {
+      onCommit(trimmed);
+    }
+    setEditing(false);
+  }, [draft, name, onCommit]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <td className="py-1 px-1.5">
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="w-full bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 focus:border-indigo-500"
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      onClick={startEdit}
+      className="py-2 px-2.5 text-gray-400 text-xs cursor-pointer hover:bg-gray-700/40 rounded transition-colors truncate max-w-[80px]"
+      title={`${name} (click to rename)`}
+    >
+      {name}
+    </td>
+  );
+}
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
@@ -163,6 +223,7 @@ export default function DHTable() {
   const updateJointFrameAngle = useRobotStore((s) => s.updateJointFrameAngle);
   const updateLinkLength = useRobotStore((s) => s.updateLinkLength);
   const updateLinkDirection = useRobotStore((s) => s.updateLinkDirection);
+  const updateElementName = useRobotStore((s) => s.updateElementName);
 
   if (elements.length === 0) {
     return (
@@ -177,7 +238,7 @@ export default function DHTable() {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-800/50 text-[11px] text-gray-500 uppercase tracking-wider">
-            <th className="text-left py-2 px-2.5 font-medium">#</th>
+            <th className="text-left py-2 px-2.5 font-medium">Name</th>
             <th className="text-left py-2 px-2.5 font-medium">Type</th>
             <th className="text-right py-2 px-2.5 font-medium">theta</th>
             <th className="text-right py-2 px-2.5 font-medium">d</th>
@@ -188,10 +249,10 @@ export default function DHTable() {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800/50">
-          {elements.map((element, i) => (
+          {elements.map((element) => (
             element.elementKind === "link"
-              ? <LinkRow key={element.id} element={element} index={i} onRemove={() => removeElement(element.id)} onUpdateLength={updateLinkLength} onUpdateDirection={updateLinkDirection} />
-              : <JointRow key={element.id} element={element} index={i} onRemove={() => removeElement(element.id)} onUpdateDHParam={updateJointDHParam} onUpdateType={updateJointType} onUpdateRotationAxis={updateJointRotationAxis} onUpdateFrameAngle={updateJointFrameAngle} />
+              ? <LinkRow key={element.id} element={element} onRemove={() => removeElement(element.id)} onUpdateLength={updateLinkLength} onUpdateDirection={updateLinkDirection} onUpdateName={updateElementName} />
+              : <JointRow key={element.id} element={element} onRemove={() => removeElement(element.id)} onUpdateDHParam={updateJointDHParam} onUpdateType={updateJointType} onUpdateRotationAxis={updateJointRotationAxis} onUpdateFrameAngle={updateJointFrameAngle} onUpdateName={updateElementName} />
           ))}
         </tbody>
       </table>
@@ -201,20 +262,21 @@ export default function DHTable() {
 
 interface JointRowProps {
   element: Joint;
-  index: number;
   onRemove: () => void;
   onUpdateDHParam: (id: string, param: keyof DHParameters, value: number) => void;
   onUpdateType: (id: string, type: "revolute" | "prismatic") => void;
   onUpdateRotationAxis: (id: string, axis: "x" | "y" | "z") => void;
   onUpdateFrameAngle: (id: string, angle: number) => void;
+  onUpdateName: (id: string, name: string) => void;
 }
 
-function JointRow({ element, index, onRemove, onUpdateDHParam, onUpdateType, onUpdateRotationAxis, onUpdateFrameAngle }: JointRowProps) {
+function JointRow({ element, onRemove, onUpdateDHParam, onUpdateType, onUpdateRotationAxis, onUpdateFrameAngle, onUpdateName }: JointRowProps) {
   return (
     <tr className="group hover:bg-gray-800/30 transition-colors">
-      <td className="py-2 px-2.5 text-gray-500 font-mono text-xs">
-        {index + 1}
-      </td>
+      <EditableNameCell
+        name={element.name}
+        onCommit={(name) => onUpdateName(element.id, name)}
+      />
       <td className="py-2 px-2.5">
         <div className="flex items-center gap-1">
           <button
@@ -303,13 +365,13 @@ function JointRow({ element, index, onRemove, onUpdateDHParam, onUpdateType, onU
 
 interface LinkRowProps {
   element: Joint;
-  index: number;
   onRemove: () => void;
   onUpdateLength: (id: string, length: number) => void;
   onUpdateDirection: (id: string, direction: LinkDirection) => void;
+  onUpdateName: (id: string, name: string) => void;
 }
 
-function LinkRow({ element, index, onRemove, onUpdateLength, onUpdateDirection }: LinkRowProps) {
+function LinkRow({ element, onRemove, onUpdateLength, onUpdateDirection, onUpdateName }: LinkRowProps) {
   const direction = getLinkDirection(element);
 
   function cycleDirection() {
@@ -326,9 +388,10 @@ function LinkRow({ element, index, onRemove, onUpdateLength, onUpdateDirection }
 
   return (
     <tr className="group hover:bg-gray-800/30 transition-colors">
-      <td className="py-2 px-2.5 text-gray-500 font-mono text-xs">
-        {index + 1}
-      </td>
+      <EditableNameCell
+        name={element.name}
+        onCommit={(name) => onUpdateName(element.id, name)}
+      />
       <td className="py-2 px-2.5">
         <div className="flex items-center gap-1">
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400">

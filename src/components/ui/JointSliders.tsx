@@ -38,7 +38,7 @@ export default function JointSliders() {
                   {isRevolute ? "R" : "P"}
                 </span>
                 <span className="text-xs text-gray-300 font-medium">
-                  Joint {globalIndex + 1}
+                  {joint.name}
                 </span>
                 <span className="text-[10px] text-gray-500 font-mono">
                   ({paramName})
