@@ -117,29 +117,67 @@ export default function RobotArm() {
   const activeKinematics = autoDHMode && autoElements.length > 0 ? autoKinematics : kinematics;
   const activeBaseMatrix = autoDHMode && autoElements.length > 0 ? autoBaseFrame : baseMatrix;
 
-  // Tubes: same pattern in both modes -- connect consecutive active elements
+  // Tubes: in auto DH mode, walk the manual element chain and transform
+  // link positions using the auto-to-manual joint transform so links follow
+  // the stepped physical path AND move correctly with joint sliders.
   const links = useMemo(() => {
     const result: LinkData[] = [];
-    const baseOrigin = getPositionFromMatrix(activeBaseMatrix);
+    const isAuto = autoDHMode && autoElements.length > 0;
 
-    for (let i = 0; i < activeKinematics.cumulativeMatrices.length; i++) {
-      const prevPos =
-        i === 0
+    if (!isAuto) {
+      // Manual mode: straightforward
+      const baseOrigin = getPositionFromMatrix(baseMatrix);
+      for (let i = 0; i < kinematics.cumulativeMatrices.length; i++) {
+        const prevPos = i === 0
           ? baseOrigin
-          : getPositionFromMatrix(activeKinematics.cumulativeMatrices[i - 1]!);
-      const currPos = getPositionFromMatrix(activeKinematics.cumulativeMatrices[i]!);
-      const element = activeElements[i];
-      if (element) {
-        result.push({
-          key: `link-${element.id}`,
-          start: prevPos,
-          end: currPos,
-        });
+          : getPositionFromMatrix(kinematics.cumulativeMatrices[i - 1]!);
+        const currPos = getPositionFromMatrix(kinematics.cumulativeMatrices[i]!);
+        const el = elements[i];
+        if (el) {
+          result.push({ key: `link-${el.id}`, start: prevPos, end: currPos });
+        }
       }
+      return result;
+    }
+
+    // Auto DH mode: for each manual element, compute its world position
+    // by transforming its manual FK position through the auto-to-manual
+    // joint transform: T = autoFK(joint) * inverse(manualFK(joint))
+    // This makes link sub-segments move with the arm when joints actuate.
+    let autoJointIdx = -1;
+    let currentTransform: THREE.Matrix4 | null = null;
+
+    // Base transform: autoBase * inverse(manualBase)
+    const autoBaseM4 = matrixToThreeMatrix4(autoBaseFrame);
+    const manualBaseM4 = matrixToThreeMatrix4(baseMatrix);
+    currentTransform = autoBaseM4.clone().multiply(manualBaseM4.clone().invert());
+
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i]!;
+
+      if (el.elementKind === "joint") {
+        autoJointIdx++;
+        // Update transform: T = autoFK(this joint) * inverse(manualFK(this joint))
+        const autoM4 = matrixToThreeMatrix4(autoKinematics.cumulativeMatrices[autoJointIdx]!);
+        const manualM4 = matrixToThreeMatrix4(kinematics.cumulativeMatrices[i]!);
+        currentTransform = autoM4.clone().multiply(manualM4.clone().invert());
+      }
+
+      // Get manual FK positions for this element
+      const manualStart = i === 0
+        ? getPositionFromMatrix(baseMatrix)
+        : getPositionFromMatrix(kinematics.cumulativeMatrices[i - 1]!);
+      const manualEnd = getPositionFromMatrix(kinematics.cumulativeMatrices[i]!);
+
+      // Transform through current joint transform
+      const start = manualStart.clone().applyMatrix4(currentTransform!);
+      const end = manualEnd.clone().applyMatrix4(currentTransform!);
+
+      result.push({ key: `link-${el.id}`, start, end });
     }
 
     return result;
-  }, [activeElements, activeKinematics.cumulativeMatrices, activeBaseMatrix]);
+  }, [elements, kinematics.cumulativeMatrices, baseMatrix, autoDHMode, autoElements, autoKinematics.cumulativeMatrices, autoBaseFrame]);
 
   // End effector
   const endEffectorMatrix = activeKinematics.endEffectorTransform;
