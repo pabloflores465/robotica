@@ -5,7 +5,7 @@ import BaseFrameControls from "./BaseFrameControls";
 import DHParameterForm from "./DHParameterForm";
 import LinkForm from "./LinkForm";
 import DHTable from "./DHTable";
-import JointSliders from "./JointSliders";
+import JointSliders, { ResetAllJointsButton } from "./JointSliders";
 import TransformPanel from "./TransformPanel";
 import logger from "../../core/services/logger";
 
@@ -157,7 +157,7 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
         </Section>
 
         {hasJoints && (
-          <Section title="Joint Controls" defaultOpen>
+          <Section title="Joint Controls" defaultOpen headerAction={<ResetAllJointsButton />}>
             <JointSliders />
           </Section>
         )}
@@ -177,9 +177,10 @@ interface SectionProps {
   children: React.ReactNode;
   defaultOpen?: boolean;
   badge?: string;
+  headerAction?: React.ReactNode;
 }
 
-function Section({ title, children, defaultOpen = false, badge }: SectionProps) {
+function Section({ title, children, defaultOpen = false, badge, headerAction }: SectionProps) {
   return (
     <details open={defaultOpen} className="group">
       <summary className="flex items-center gap-2 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
@@ -198,6 +199,11 @@ function Section({ title, children, defaultOpen = false, badge }: SectionProps) 
         {badge && (
           <span className="text-[10px] font-medium bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded-full">
             {badge}
+          </span>
+        )}
+        {headerAction && (
+          <span className="ml-auto" onClick={(e) => e.preventDefault()}>
+            {headerAction}
           </span>
         )}
       </summary>

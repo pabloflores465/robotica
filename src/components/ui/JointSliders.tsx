@@ -179,3 +179,31 @@ function EditableValue({ value, onChange }: { value: number; onChange: (v: numbe
     </button>
   );
 }
+
+export function ResetAllJointsButton() {
+  const elements = useRobotStore((s) => s.elements);
+  const resetAllJoints = useRobotStore((s) => s.resetAllJoints);
+
+  const hasNonResetJoint = elements.some((el) => {
+    if (el.elementKind !== "joint") return false;
+    const resetValue =
+      el.type !== "revolute" && el.prismaticDirection === "retract"
+        ? (el.prismaticMax ?? el.maxLimit)
+        : 0;
+    return el.variableValue !== resetValue;
+  });
+
+  return (
+    <button
+      onClick={resetAllJoints}
+      disabled={!hasNonResetJoint}
+      className={`text-[10px] px-1.5 py-0.5 rounded border transition-all ${
+        hasNonResetJoint
+          ? "text-gray-500 hover:text-gray-300 hover:bg-gray-800 border-gray-700/50 hover:border-gray-600"
+          : "text-gray-700 border-gray-800 cursor-not-allowed"
+      }`}
+    >
+      Reset All
+    </button>
+  );
+}

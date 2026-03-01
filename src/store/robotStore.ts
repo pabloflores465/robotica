@@ -51,6 +51,7 @@ interface RobotState {
     value: number,
   ) => void;
   updateJointVariable: (id: string, value: number) => void;
+  resetAllJoints: () => void;
   updateJointLimits: (id: string, min: number, max: number) => void;
   updateJointType: (id: string, type: JointType) => void;
   updatePrismaticConfig: (id: string, prismaticMax: number, prismaticDirection: "extend" | "retract") => void;
@@ -222,6 +223,20 @@ export const useRobotStore = create<RobotState>((set) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, variableValue: value } : el,
       );
+      return { elements, kinematics: recompute(elements, state.baseMatrix) };
+    });
+  },
+
+  resetAllJoints: () => {
+    set((state) => {
+      const elements = state.elements.map((el) => {
+        if (el.elementKind !== "joint") return el;
+        const resetValue =
+          el.type !== "revolute" && el.prismaticDirection === "retract"
+            ? (el.prismaticMax ?? el.maxLimit)
+            : 0;
+        return { ...el, variableValue: resetValue };
+      });
       return { elements, kinematics: recompute(elements, state.baseMatrix) };
     });
   },
