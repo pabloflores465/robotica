@@ -149,9 +149,10 @@ function EditableCell({ value, isDegrees, isVariable, variableColor, onCommit }:
 interface EditableLengthCellProps {
   value: number;
   onCommit: (value: number) => void;
+  compact?: boolean;
 }
 
-function EditableLengthCell({ value, onCommit }: EditableLengthCellProps) {
+function EditableLengthCell({ value, onCommit, compact }: EditableLengthCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -183,6 +184,33 @@ function EditableLengthCell({ value, onCommit }: EditableLengthCellProps) {
       inputRef.current.select();
     }
   }, [editing]);
+
+  if (compact) {
+    if (editing) {
+      return (
+        <input
+          ref={inputRef}
+          type="number"
+          step="any"
+          min="0"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKeyDown}
+          className="w-16 bg-gray-800 border border-teal-500 rounded px-1.5 py-0.5 text-xs font-mono text-gray-200 text-right focus:outline-none focus:ring-1 focus:ring-teal-500/30"
+        />
+      );
+    }
+    return (
+      <button
+        onClick={startEdit}
+        className="font-mono text-xs text-teal-400 cursor-pointer hover:bg-gray-700/40 rounded px-1 py-0.5 transition-colors"
+        title="Click to edit length"
+      >
+        {Math.abs(value).toFixed(2)}
+      </button>
+    );
+  }
 
   if (editing) {
     return (
@@ -440,6 +468,140 @@ function AutoDHRow({
 }
 
 // ---------------------------------------------------------------------------
+// Simplified elements list for auto mode (shows name, type, delete button)
+// ---------------------------------------------------------------------------
+
+function ElementsList() {
+  const elements = useRobotStore((s) => s.elements);
+  const removeElement = useRobotStore((s) => s.removeElement);
+  const updateElementName = useRobotStore((s) => s.updateElementName);
+  const updateLinkLength = useRobotStore((s) => s.updateLinkLength);
+  const updateLinkDirection = useRobotStore((s) => s.updateLinkDirection);
+
+  if (elements.length === 0) {
+    return (
+      <div className="text-gray-600 text-xs text-center py-4">
+        No elements added yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-800">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-800/50 text-[11px] text-gray-500 uppercase tracking-wider">
+            <th className="text-left py-2 px-2.5 font-medium">Name</th>
+            <th className="text-left py-2 px-2.5 font-medium">Type</th>
+            <th className="text-right py-2 px-2.5 font-medium">Value</th>
+            <th className="py-2 px-2 w-8"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-800/50">
+          {elements.map((element) => (
+            <ElementRow
+              key={element.id}
+              element={element}
+              onRemove={() => removeElement(element.id)}
+              onUpdateName={updateElementName}
+              onUpdateLength={updateLinkLength}
+              onUpdateDirection={updateLinkDirection}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ElementRow({
+  element,
+  onRemove,
+  onUpdateName,
+  onUpdateLength,
+  onUpdateDirection,
+}: {
+  element: Joint;
+  onRemove: () => void;
+  onUpdateName: (id: string, name: string) => void;
+  onUpdateLength: (id: string, length: number) => void;
+  onUpdateDirection: (id: string, direction: LinkDirection) => void;
+}) {
+  const isLink = element.elementKind === "link";
+  const isRevolute = element.type === "revolute";
+  const direction = isLink ? getLinkDirection(element) : null;
+
+  return (
+    <tr className="group hover:bg-gray-800/30 transition-colors">
+      <EditableNameCell
+        name={element.name}
+        onCommit={(name) => onUpdateName(element.id, name)}
+      />
+      <td className="py-2 px-2.5">
+        <div className="flex items-center gap-1">
+          {isLink ? (
+            <>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400">
+                L
+              </span>
+              {direction && (
+                <button
+                  onClick={() => {
+                    const currentIdx = DIRECTION_CYCLE.indexOf(direction);
+                    const nextIdx = (currentIdx + 1) % DIRECTION_CYCLE.length;
+                    onUpdateDirection(element.id, DIRECTION_CYCLE[nextIdx]!);
+                  }}
+                  className={`text-[9px] font-bold px-1 py-0.5 rounded cursor-pointer transition-colors ${
+                    element.rotationAxis === "x" ? "bg-red-500/15 text-red-400 hover:bg-red-500/25" :
+                    element.rotationAxis === "y" ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" :
+                    "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+                  }`}
+                  title={`Direction: ${direction.toUpperCase()} (click to cycle)`}
+                >
+                  {direction.toUpperCase()}
+                </button>
+              )}
+            </>
+          ) : (
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                isRevolute
+                  ? "bg-amber-500/15 text-amber-400"
+                  : "bg-cyan-500/15 text-cyan-400"
+              }`}
+            >
+              {isRevolute ? "R" : "P"}
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="py-2 px-2.5 text-right">
+        {isLink ? (
+          <EditableLengthCell
+            value={element.dhParams.d}
+            onCommit={(v) => onUpdateLength(element.id, v)}
+            compact
+          />
+        ) : (
+          <span className="text-[10px] text-gray-600 font-mono">--</span>
+        )}
+      </td>
+      <td className="py-2 px-2 text-center">
+        <button
+          onClick={onRemove}
+          className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all p-0.5 rounded hover:bg-red-400/10"
+          title="Remove element"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main DHTable component (switches between manual and auto)
 // ---------------------------------------------------------------------------
 
@@ -447,7 +609,17 @@ export default function DHTable() {
   const autoDHMode = useRobotStore((s) => s.autoDHMode);
 
   if (autoDHMode) {
-    return <AutoDHTable />;
+    return (
+      <div className="space-y-3">
+        <ElementsList />
+        <div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-1.5">
+            Auto-DH Frames
+          </div>
+          <AutoDHTable />
+        </div>
+      </div>
+    );
   }
 
   return <ManualDHTable />;
