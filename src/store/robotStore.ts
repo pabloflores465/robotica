@@ -87,18 +87,64 @@ function recompute(elements: Joint[], baseMat: Matrix4x4): ForwardKinematicsResu
   return computeForwardKinematics(elements, baseMat);
 }
 
+const STORAGE_KEY = "dh-diagram";
+
+function saveToStorage(elements: Joint[], baseRotation: BaseRotation): void {
+  try {
+    const data: DiagramData = {
+      version: "1.0.0",
+      baseRotation,
+      elements: elements.map(({ id: _id, ...rest }) => rest),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // Silently ignore storage errors (quota, private browsing, etc.)
+  }
+}
+
+function loadFromStorage(): { elements: Joint[]; baseRotation: BaseRotation } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data: unknown = JSON.parse(raw);
+    if (typeof data !== "object" || data === null) return null;
+    const obj = data as Record<string, unknown>;
+    if (!Array.isArray(obj.elements)) return null;
+    if (typeof obj.baseRotation !== "object" || obj.baseRotation === null) return null;
+    const br = obj.baseRotation as Record<string, unknown>;
+    if (typeof br.x !== "number" || typeof br.y !== "number" || typeof br.z !== "number") return null;
+
+    const elements: Joint[] = (obj.elements as Omit<Joint, "id">[]).map((el) => ({
+      ...el,
+      id: crypto.randomUUID(),
+    }));
+    return { elements, baseRotation: obj.baseRotation as BaseRotation };
+  } catch {
+    return null;
+  }
+}
+
 let jointCounter = 0;
 let linkCounter = 0;
 
+// Restore persisted state
+const persisted = loadFromStorage();
+if (persisted) {
+  for (const el of persisted.elements) {
+    if (el.elementKind === "joint") jointCounter++;
+    else linkCounter++;
+  }
+}
+
+const initialBaseRotation = persisted?.baseRotation ?? { x: 0, y: 0, z: 0 };
+const initialBaseMatrix = buildBaseMatrix(initialBaseRotation);
+const initialElements = persisted?.elements ?? [];
+
 export const useRobotStore = create<RobotState>((set) => ({
-  elements: [],
-  kinematics: {
-    individualMatrices: [],
-    cumulativeMatrices: [],
-    endEffectorTransform: identity4(),
-  },
-  baseRotation: { x: 0, y: 0, z: 0 },
-  baseMatrix: identity4(),
+  elements: initialElements,
+  kinematics: recompute(initialElements, initialBaseMatrix),
+  baseRotation: initialBaseRotation,
+  baseMatrix: initialBaseMatrix,
 
   addJoint: (type, dhParams, rotationAxis, frameAngle, name) => {
     jointCounter++;
@@ -287,6 +333,8 @@ export const useRobotStore = create<RobotState>((set) => ({
     linkCounter = 0;
     set({
       elements: [],
+      baseRotation: { x: 0, y: 0, z: 0 },
+      baseMatrix: identity4(),
       kinematics: {
         individualMatrices: [],
         cumulativeMatrices: [],
@@ -295,3 +343,8 @@ export const useRobotStore = create<RobotState>((set) => ({
     });
   },
 }));
+
+// Auto-save to localStorage on every state change
+useRobotStore.subscribe((state) => {
+  saveToStorage(state.elements, state.baseRotation);
+});
