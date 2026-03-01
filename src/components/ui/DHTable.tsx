@@ -67,7 +67,8 @@ const DEG_TO_RAD = Math.PI / 180;
 
 const DIRECTION_CYCLE: LinkDirection[] = ["+x", "-x", "+y", "-y", "+z", "-z"];
 
-function getLinkDirection(element: Joint): LinkDirection {
+function getLinkDirection(element: Joint, useIntended = false): LinkDirection {
+  if (useIntended && element.intendedDirection) return element.intendedDirection;
   const sign = element.dhParams.d >= 0 ? "+" : "-";
   return `${sign}${element.rotationAxis}` as LinkDirection;
 }
@@ -529,7 +530,7 @@ function ElementRow({
 }) {
   const isLink = element.elementKind === "link";
   const isRevolute = element.type === "revolute";
-  const direction = isLink ? getLinkDirection(element) : null;
+  const direction = isLink ? getLinkDirection(element, true) : null;
 
   return (
     <tr className="group hover:bg-gray-800/30 transition-colors">
@@ -544,23 +545,26 @@ function ElementRow({
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400">
                 L
               </span>
-              {direction && (
-                <button
-                  onClick={() => {
-                    const currentIdx = DIRECTION_CYCLE.indexOf(direction);
-                    const nextIdx = (currentIdx + 1) % DIRECTION_CYCLE.length;
-                    onUpdateDirection(element.id, DIRECTION_CYCLE[nextIdx]!);
-                  }}
-                  className={`text-[9px] font-bold px-1 py-0.5 rounded cursor-pointer transition-colors ${
-                    element.rotationAxis === "x" ? "bg-red-500/15 text-red-400 hover:bg-red-500/25" :
-                    element.rotationAxis === "y" ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" :
-                    "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
-                  }`}
-                  title={`Direction: ${direction.toUpperCase()} (click to cycle)`}
-                >
-                  {direction.toUpperCase()}
-                </button>
-              )}
+              {direction && (() => {
+                const dirAxis = direction.charAt(1) as "x" | "y" | "z";
+                return (
+                  <button
+                    onClick={() => {
+                      const currentIdx = DIRECTION_CYCLE.indexOf(direction);
+                      const nextIdx = (currentIdx + 1) % DIRECTION_CYCLE.length;
+                      onUpdateDirection(element.id, DIRECTION_CYCLE[nextIdx]!);
+                    }}
+                    className={`text-[9px] font-bold px-1 py-0.5 rounded cursor-pointer transition-colors ${
+                      dirAxis === "x" ? "bg-red-500/15 text-red-400 hover:bg-red-500/25" :
+                      dirAxis === "y" ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" :
+                      "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+                    }`}
+                    title={`Direction: ${direction.toUpperCase()} (click to cycle)`}
+                  >
+                    {direction.toUpperCase()}
+                  </button>
+                );
+              })()}
             </>
           ) : (
             <span
@@ -578,7 +582,9 @@ function ElementRow({
       <td className="py-2 px-2.5 text-right">
         {isLink ? (
           <EditableLengthCell
-            value={element.dhParams.d}
+            value={element.intendedDirection
+              ? Math.sqrt(element.dhParams.d * element.dhParams.d + element.dhParams.a * element.dhParams.a)
+              : element.dhParams.d}
             onCommit={(v) => onUpdateLength(element.id, v)}
             compact
           />

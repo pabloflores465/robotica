@@ -53,6 +53,8 @@ export interface Joint {
   prismaticDirection?: "extend" | "retract";
   /** Whether this joint's DH params were auto-computed */
   autoComputed?: boolean;
+  /** For links in auto-DH mode: the user-intended direction relative to the auto DH frame */
+  intendedDirection?: LinkDirection;
 }
 
 // ---------------------------------------------------------------------------
