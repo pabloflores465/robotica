@@ -181,24 +181,38 @@ export default function RobotArm() {
         return <JointGroup key={element.id} matrix={frameMatrix} joint={element} />;
       })}
 
-      {/* DH annotations: use auto DH data when active, manual otherwise */}
+      {/* DH annotations */}
       {isAuto
-        ? autoElements.map((element, i) => {
-            if (element.elementKind !== "joint") return null;
-            const prevMatrix = i === 0 ? autoBaseFrame : autoKinematics.cumulativeMatrices[i - 1]!;
-            const effective = getEffectiveDHParams(element);
-            return (
-              <DHAnnotationGroup
-                key={`dh-ann-${element.id}`}
-                matrix={prevMatrix}
-                theta={effective.theta}
-                d={effective.d}
-                jointIndex={i}
-                rotationAxis={element.rotationAxis}
-                jointType={element.type}
-              />
-            );
-          })
+        ? (() => {
+            // Map auto joint index -> manual element index of prev joint
+            const manualJointIndices: number[] = [];
+            for (let m = 0; m < elements.length; m++) {
+              if (elements[m]!.elementKind === "joint") manualJointIndices.push(m);
+            }
+            return autoElements.map((element, i) => {
+              if (element.elementKind !== "joint") return null;
+              // Auto DH orientation from the previous auto frame
+              const autoPrev = i === 0 ? autoBaseFrame : autoKinematics.cumulativeMatrices[i - 1]!;
+              const autoAxes = extractFrameAxes(autoPrev);
+              // Manual FK position of the previous joint (or base)
+              const manualPrevPos = i === 0
+                ? getPositionVec3(baseMatrix)
+                : getPositionVec3(kinematics.cumulativeMatrices[manualJointIndices[i - 1]!]!);
+              const annMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, manualPrevPos);
+              const effective = getEffectiveDHParams(element);
+              return (
+                <DHAnnotationGroup
+                  key={`dh-ann-${element.id}`}
+                  matrix={annMatrix}
+                  theta={effective.theta}
+                  d={effective.d}
+                  jointIndex={i}
+                  rotationAxis={element.rotationAxis}
+                  jointType={element.type}
+                />
+              );
+            });
+          })()
         : elements.map((element, i) => {
             if (element.elementKind !== "joint") return null;
             const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
