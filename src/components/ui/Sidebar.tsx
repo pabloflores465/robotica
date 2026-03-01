@@ -49,9 +49,10 @@ function validateDiagramData(raw: unknown): DiagramData | null {
 
 interface SidebarProps {
   onClose?: () => void;
+  sidebarWidth?: number;
 }
 
-export default function Sidebar({ onClose }: SidebarProps) {
+export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
   const elements = useRobotStore((s) => s.elements);
   const clearAll = useRobotStore((s) => s.clearAll);
   const importDiagram = useRobotStore((s) => s.importDiagram);
@@ -82,7 +83,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
   }
 
   return (
-    <aside className="w-[85vw] max-w-[400px] md:w-[400px] h-screen flex flex-col bg-gray-950 text-gray-100 border-r border-gray-800">
+    <aside
+      className="w-[85vw] max-w-[400px] md:max-w-none h-screen flex flex-col bg-gray-950 text-gray-100 border-r border-gray-800"
+      style={sidebarWidth ? { width: `${sidebarWidth}px` } : undefined}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 md:px-5 py-4 border-b border-gray-800">
         <h1 className="text-base font-bold text-white tracking-tight">
