@@ -5,6 +5,8 @@ import {
   matrixToThreeMatrix4,
   getPositionFromMatrix,
   extractFrameAxes,
+  buildFrameMatrix,
+  getPositionVec3,
   identity4,
 } from "../../math/matrixOps";
 import { getEffectiveDHParams } from "../../math/dhTransform";
@@ -182,48 +184,50 @@ export default function RobotArm() {
         let labelAxis: RotationAxis;
 
         if (autoDHMode && autoElements.length > 0) {
-          // In auto DH mode, always position at the auto DH frame
+          // In auto DH mode, use the auto DH frame rotation but position
+          // the label at the link's manual FK start position so consecutive
+          // links between two joints each get their own label position.
           let jointCount = 0;
           for (let j = 0; j < idx; j++) {
             if (elements[j]!.elementKind === "joint") jointCount++;
           }
-          if (jointCount === 0) {
-            labelMatrix = autoBaseFrame;
-          } else {
-            const autoIdx = jointCount - 1;
-            labelMatrix = autoIdx < autoKinematics.cumulativeMatrices.length
-              ? autoKinematics.cumulativeMatrices[autoIdx]!
+          const autoFrame = jointCount === 0
+            ? autoBaseFrame
+            : (jointCount - 1) < autoKinematics.cumulativeMatrices.length
+              ? autoKinematics.cumulativeMatrices[jointCount - 1]!
               : autoKinematics.endEffectorTransform;
-          }
+
+          // Get the manual FK start position for this specific link
+          const manualStart = idx === 0
+            ? baseMatrix
+            : kinematics.cumulativeMatrices[idx - 1]!;
+          const manualEnd = kinematics.cumulativeMatrices[idx]!;
+          const startPos = getPositionVec3(manualStart);
+
+          // Build label matrix: auto DH frame rotation + manual FK start position
+          const autoAxes = extractFrameAxes(autoFrame);
+          labelMatrix = buildFrameMatrix(autoAxes.x, autoAxes.y, autoAxes.z, startPos);
+
+          // Compute direction and length by projecting displacement onto auto DH axes
+          const endPos = getPositionVec3(manualEnd);
+          const dx = endPos.x - startPos.x;
+          const dy = endPos.y - startPos.y;
+          const dz = endPos.z - startPos.z;
+          const projX = dx * autoAxes.x.x + dy * autoAxes.x.y + dz * autoAxes.x.z;
+          const projY = dx * autoAxes.y.x + dy * autoAxes.y.y + dz * autoAxes.y.z;
+          const projZ = dx * autoAxes.z.x + dy * autoAxes.z.y + dz * autoAxes.z.z;
 
           if (element.intendedDirection) {
             // Link created in auto DH mode: use the stored intended direction
-            const dir = element.intendedDirection;
-            labelAxis = dir.charAt(1) as RotationAxis;
-            const sign = dir.charAt(0) === "+" ? 1 : -1;
+            labelAxis = element.intendedDirection.charAt(1) as RotationAxis;
+            const sign = element.intendedDirection.charAt(0) === "+" ? 1 : -1;
             const totalLength = Math.sqrt(
               element.dhParams.d * element.dhParams.d +
               element.dhParams.a * element.dhParams.a,
             );
             labelLength = sign * totalLength;
           } else {
-            // Legacy link (created before auto DH): compute direction from
-            // manual FK displacement projected onto auto DH frame axes
-            const manualStart = idx === 0
-              ? baseMatrix
-              : kinematics.cumulativeMatrices[idx - 1]!;
-            const manualEnd = kinematics.cumulativeMatrices[idx]!;
-            const startPos = getPositionFromMatrix(manualStart);
-            const endPos = getPositionFromMatrix(manualEnd);
-            const autoAxes = extractFrameAxes(labelMatrix);
-            const dx = endPos.x - startPos.x;
-            const dy = endPos.y - startPos.y;
-            const dz = endPos.z - startPos.z;
-            // Project displacement onto auto frame axes
-            const projX = dx * autoAxes.x.x + dy * autoAxes.x.y + dz * autoAxes.x.z;
-            const projY = dx * autoAxes.y.x + dy * autoAxes.y.y + dz * autoAxes.y.z;
-            const projZ = dx * autoAxes.z.x + dy * autoAxes.z.y + dz * autoAxes.z.z;
-            // Use dominant axis for label direction
+            // Legacy link: use dominant axis from projection
             const absDots = [Math.abs(projX), Math.abs(projY), Math.abs(projZ)];
             const maxVal = Math.max(absDots[0]!, absDots[1]!, absDots[2]!);
             const maxDotIdx = absDots.indexOf(maxVal);
