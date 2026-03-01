@@ -172,17 +172,50 @@ export default function RobotArm() {
         );
       })}
 
-      {/* Link length annotations -- only for link elements (manual mode only) */}
-      {!autoDHMode && activeElements.map((element, i) => {
+      {/* Link length annotations -- for link elements in both modes */}
+      {elements.map((element, idx) => {
         if (element.elementKind !== "link") return null;
-        const prevMatrix = i === 0 ? activeBaseMatrix : activeKinematics.cumulativeMatrices[i - 1]!;
+
+        let labelMatrix: Matrix4x4;
+        let labelLength: number;
+        let labelAxis: RotationAxis;
+
+        if (autoDHMode && autoElements.length > 0 && element.intendedDirection) {
+          // In auto DH mode, position at the auto DH frame and use intended direction
+          let jointCount = 0;
+          for (let j = 0; j < idx; j++) {
+            if (elements[j]!.elementKind === "joint") jointCount++;
+          }
+          if (jointCount === 0) {
+            labelMatrix = autoBaseFrame;
+          } else {
+            const autoIdx = jointCount - 1;
+            labelMatrix = autoIdx < autoKinematics.cumulativeMatrices.length
+              ? autoKinematics.cumulativeMatrices[autoIdx]!
+              : autoKinematics.endEffectorTransform;
+          }
+          const dir = element.intendedDirection;
+          labelAxis = dir.charAt(1) as RotationAxis;
+          const sign = dir.charAt(0) === "+" ? 1 : -1;
+          const totalLength = Math.sqrt(
+            element.dhParams.d * element.dhParams.d +
+            element.dhParams.a * element.dhParams.a,
+          );
+          labelLength = sign * totalLength;
+        } else {
+          // Manual mode or legacy link: use manual FK
+          labelMatrix = idx === 0 ? baseMatrix : kinematics.cumulativeMatrices[idx - 1]!;
+          labelLength = element.dhParams.d;
+          labelAxis = element.rotationAxis;
+        }
+
         return (
           <LinkAnnotationGroup
             key={`link-ann-${element.id}`}
-            matrix={prevMatrix}
-            length={element.dhParams.d}
-            linkIndex={i}
-            rotationAxis={element.rotationAxis}
+            matrix={labelMatrix}
+            length={labelLength}
+            linkIndex={idx}
+            rotationAxis={labelAxis}
           />
         );
       })}
