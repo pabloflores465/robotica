@@ -4,6 +4,7 @@ import { useRobotStore } from "../../store/robotStore";
 import {
   matrixToThreeMatrix4,
   getPositionFromMatrix,
+  extractFrameAxes,
   identity4,
 } from "../../math/matrixOps";
 import { getEffectiveDHParams } from "../../math/dhTransform";
@@ -180,8 +181,8 @@ export default function RobotArm() {
         let labelLength: number;
         let labelAxis: RotationAxis;
 
-        if (autoDHMode && autoElements.length > 0 && element.intendedDirection) {
-          // In auto DH mode, position at the auto DH frame and use intended direction
+        if (autoDHMode && autoElements.length > 0) {
+          // In auto DH mode, always position at the auto DH frame
           let jointCount = 0;
           for (let j = 0; j < idx; j++) {
             if (elements[j]!.elementKind === "joint") jointCount++;
@@ -194,16 +195,44 @@ export default function RobotArm() {
               ? autoKinematics.cumulativeMatrices[autoIdx]!
               : autoKinematics.endEffectorTransform;
           }
-          const dir = element.intendedDirection;
-          labelAxis = dir.charAt(1) as RotationAxis;
-          const sign = dir.charAt(0) === "+" ? 1 : -1;
-          const totalLength = Math.sqrt(
-            element.dhParams.d * element.dhParams.d +
-            element.dhParams.a * element.dhParams.a,
-          );
-          labelLength = sign * totalLength;
+
+          if (element.intendedDirection) {
+            // Link created in auto DH mode: use the stored intended direction
+            const dir = element.intendedDirection;
+            labelAxis = dir.charAt(1) as RotationAxis;
+            const sign = dir.charAt(0) === "+" ? 1 : -1;
+            const totalLength = Math.sqrt(
+              element.dhParams.d * element.dhParams.d +
+              element.dhParams.a * element.dhParams.a,
+            );
+            labelLength = sign * totalLength;
+          } else {
+            // Legacy link (created before auto DH): compute direction from
+            // manual FK displacement projected onto auto DH frame axes
+            const manualStart = idx === 0
+              ? baseMatrix
+              : kinematics.cumulativeMatrices[idx - 1]!;
+            const manualEnd = kinematics.cumulativeMatrices[idx]!;
+            const startPos = getPositionFromMatrix(manualStart);
+            const endPos = getPositionFromMatrix(manualEnd);
+            const autoAxes = extractFrameAxes(labelMatrix);
+            const dx = endPos.x - startPos.x;
+            const dy = endPos.y - startPos.y;
+            const dz = endPos.z - startPos.z;
+            // Project displacement onto auto frame axes
+            const projX = dx * autoAxes.x.x + dy * autoAxes.x.y + dz * autoAxes.x.z;
+            const projY = dx * autoAxes.y.x + dy * autoAxes.y.y + dz * autoAxes.y.z;
+            const projZ = dx * autoAxes.z.x + dy * autoAxes.z.y + dz * autoAxes.z.z;
+            // Use dominant axis for label direction
+            const absDots = [Math.abs(projX), Math.abs(projY), Math.abs(projZ)];
+            const maxVal = Math.max(absDots[0]!, absDots[1]!, absDots[2]!);
+            const maxDotIdx = absDots.indexOf(maxVal);
+            const axisNames: RotationAxis[] = ["x", "y", "z"];
+            labelAxis = axisNames[maxDotIdx]!;
+            labelLength = [projX, projY, projZ][maxDotIdx]!;
+          }
         } else {
-          // Manual mode or legacy link: use manual FK
+          // Manual mode: use manual FK
           labelMatrix = idx === 0 ? baseMatrix : kinematics.cumulativeMatrices[idx - 1]!;
           labelLength = element.dhParams.d;
           labelAxis = element.rotationAxis;
