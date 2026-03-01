@@ -5,6 +5,8 @@ import {
   matrixToThreeMatrix4,
   getPositionFromMatrix,
   identity4,
+  multiplyMatrices,
+  rotationAroundAxis,
 } from "../../math/matrixOps";
 import { getEffectiveDHParams } from "../../math/dhTransform";
 import type { Matrix4x4 } from "../../core/types/matrix";
@@ -19,9 +21,10 @@ import LinkLengthLabel from "./LinkLengthLabel";
 interface JointGroupProps {
   matrix: Matrix4x4;
   joint: Joint;
+  displayAxis: RotationAxis;
 }
 
-function JointGroup({ matrix, joint }: JointGroupProps) {
+function JointGroup({ matrix, joint, displayAxis }: JointGroupProps) {
   const groupRef = useRef<THREE.Group>(null);
   const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
 
@@ -35,7 +38,7 @@ function JointGroup({ matrix, joint }: JointGroupProps) {
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
       <CoordinateFrame size={0.4} showLabels />
-      <JointMesh type={joint.type} rotationAxis={joint.rotationAxis} />
+      <JointMesh type={joint.type} rotationAxis={displayAxis} />
     </group>
   );
 }
@@ -99,13 +102,41 @@ interface LinkData {
   end: THREE.Vector3;
 }
 
+function getRevoluteFrameRemap(axis: RotationAxis): Matrix4x4 {
+  if (axis === "x") {
+    // Rotate frame so local Z aligns with original X
+    return rotationAroundAxis("y", Math.PI / 2);
+  }
+  if (axis === "y") {
+    // Rotate frame so local Z aligns with original Y
+    return rotationAroundAxis("x", -Math.PI / 2);
+  }
+  return identity4();
+}
+
+function getDisplayMatrix(
+  matrix: Matrix4x4,
+  joint: Joint,
+  revoluteAroundZOnly: boolean,
+): Matrix4x4 {
+  if (!revoluteAroundZOnly || joint.type !== "revolute") return matrix;
+  return multiplyMatrices(matrix, getRevoluteFrameRemap(joint.rotationAxis));
+}
+
+function getDisplayAxis(
+  joint: Joint,
+  revoluteAroundZOnly: boolean,
+): RotationAxis {
+  if (revoluteAroundZOnly && joint.type === "revolute") return "z";
+  return joint.rotationAxis;
+}
+
 
 export default function RobotArm() {
   const elements = useRobotStore((s) => s.elements);
   const kinematics = useRobotStore((s) => s.kinematics);
   const baseMatrix = useRobotStore((s) => s.baseMatrix);
-  const autoDH = useRobotStore((s) => s.autoDH);
-  const dhFrames = useRobotStore((s) => s.dhFrames);
+  const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
 
   const links = useMemo(() => {
     const result: LinkData[] = [];
@@ -135,25 +166,30 @@ export default function RobotArm() {
       {/* Joint frames + meshes */}
       {elements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
-        // When Auto DH is on, use DH-oriented frame for display
-        const matrix = (autoDH && dhFrames[i]) ? dhFrames[i] : kinematics.cumulativeMatrices[i];
+        const matrix = kinematics.cumulativeMatrices[i];
         if (!matrix) return null;
-        return <JointGroup key={element.id} matrix={matrix} joint={element} />;
+        const displayMatrix = getDisplayMatrix(matrix, element, revoluteAroundZOnly);
+        const displayAxis = getDisplayAxis(element, revoluteAroundZOnly);
+        return <JointGroup key={element.id} matrix={displayMatrix} joint={element} displayAxis={displayAxis} />;
       })}
 
       {/* DH annotations */}
       {elements.map((element, i) => {
         if (element.elementKind !== "joint") return null;
-        const prevMatrix = i === 0 ? baseMatrix : kinematics.cumulativeMatrices[i - 1]!;
+        const prevMatrix = i === 0
+          ? baseMatrix
+          : kinematics.cumulativeMatrices[i - 1]!;
         const effective = getEffectiveDHParams(element);
+        const annotationMatrix = getDisplayMatrix(prevMatrix, element, revoluteAroundZOnly);
+        const annotationAxis = getDisplayAxis(element, revoluteAroundZOnly);
         return (
           <DHAnnotationGroup
             key={`dh-ann-${element.id}`}
-            matrix={prevMatrix}
+            matrix={annotationMatrix}
             theta={effective.theta}
             d={effective.d}
             jointIndex={i}
-            rotationAxis={element.rotationAxis}
+            rotationAxis={annotationAxis}
             jointType={element.type}
           />
         );
@@ -162,7 +198,9 @@ export default function RobotArm() {
       {/* Link length labels */}
       {elements.map((element, idx) => {
         if (element.elementKind !== "link") return null;
-        const labelMatrix = idx === 0 ? baseMatrix : kinematics.cumulativeMatrices[idx - 1]!;
+        const labelMatrix = idx === 0
+          ? baseMatrix
+          : kinematics.cumulativeMatrices[idx - 1]!;
         return (
           <LinkAnnotationGroup
             key={`link-ann-${element.id}`}

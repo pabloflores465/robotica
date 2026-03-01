@@ -10,7 +10,6 @@ import {
   computeForwardKinematics,
   type ForwardKinematicsResult,
 } from "../math/forwardKinematics";
-import { computeDHOrientedFrames } from "../math/dhFrameOrientation";
 import { identity4, rotationAroundAxis, multiplyMatrices } from "../math/matrixOps";
 import type { Matrix4x4 } from "../core/types/matrix";
 
@@ -36,10 +35,8 @@ interface RobotState {
   baseRotation: BaseRotation;
   /** Base matrix computed from baseRotation (cached) */
   baseMatrix: Matrix4x4;
-  /** When true, displayed frame orientations follow classical DH convention */
-  autoDH: boolean;
-  /** DH-oriented cumulative matrices (computed when autoDH is true) */
-  dhFrames: Matrix4x4[];
+  /** If true, revolute joint frames are remapped so local Z matches the selected axis */
+  revoluteAroundZOnly: boolean;
 
   addJoint: (
     type: JointType,
@@ -72,7 +69,7 @@ interface RobotState {
   updateLinkDirection: (id: string, direction: LinkDirection) => void;
   updateElementName: (id: string, name: string) => void;
   setBaseRotation: (rotation: BaseRotation) => void;
-  toggleAutoDH: () => void;
+  setRevoluteAroundZOnly: (enabled: boolean) => void;
   clearAll: () => void;
   importDiagram: (data: DiagramData) => void;
 }
@@ -82,6 +79,7 @@ export interface DiagramData {
   version: string;
   baseRotation: BaseRotation;
   elements: Omit<Joint, "id">[];
+  revoluteAroundZOnly?: boolean;
 }
 
 function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
@@ -92,27 +90,19 @@ function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
   return multiplyMatrices(multiplyMatrices(rx, ry), rz);
 }
 
-interface RecomputeResult {
-  kinematics: ForwardKinematicsResult;
-  dhFrames: Matrix4x4[];
-}
-
-function recompute(elements: Joint[], baseMat: Matrix4x4, autoDH: boolean): RecomputeResult {
+function recompute(
+  elements: Joint[],
+  baseMat: Matrix4x4,
+  revoluteAroundZOnly: boolean,
+): ForwardKinematicsResult {
   if (elements.length === 0) {
     return {
-      kinematics: {
-        individualMatrices: [],
-        cumulativeMatrices: [],
-        endEffectorTransform: identity4(),
-      },
-      dhFrames: [],
+      individualMatrices: [],
+      cumulativeMatrices: [],
+      endEffectorTransform: identity4(),
     };
   }
-  const kinematics = computeForwardKinematics(elements, baseMat);
-  const dhFrames = autoDH
-    ? computeDHOrientedFrames(elements, kinematics.cumulativeMatrices, baseMat)
-    : [];
-  return { kinematics, dhFrames };
+  return computeForwardKinematics(elements, baseMat, { revoluteAroundZOnly });
 }
 
 const emptyFK: ForwardKinematicsResult = {
@@ -126,12 +116,14 @@ const STORAGE_KEY = "dh-diagram";
 function saveToStorage(
   elements: Joint[],
   baseRotation: BaseRotation,
+  revoluteAroundZOnly: boolean,
 ): void {
   try {
     const data: DiagramData = {
-      version: "1.0.0",
+      version: "1.1.0",
       baseRotation,
       elements: elements.map(({ id: _id, ...rest }) => rest),
+      revoluteAroundZOnly,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -142,6 +134,7 @@ function saveToStorage(
 interface PersistedState {
   elements: Joint[];
   baseRotation: BaseRotation;
+  revoluteAroundZOnly: boolean;
 }
 
 function loadFromStorage(): PersistedState | null {
@@ -153,9 +146,14 @@ function loadFromStorage(): PersistedState | null {
     const obj = data as Record<string, unknown>;
     if (!Array.isArray(obj.elements)) return null;
     if (typeof obj.baseRotation !== "object" || obj.baseRotation === null) return null;
+    if (
+      obj.revoluteAroundZOnly !== undefined &&
+      typeof obj.revoluteAroundZOnly !== "boolean"
+    ) {
+      return null;
+    }
     const br = obj.baseRotation as Record<string, unknown>;
     if (typeof br.x !== "number" || typeof br.y !== "number" || typeof br.z !== "number") return null;
-
     const elements: Joint[] = (obj.elements as Omit<Joint, "id">[]).map((el) => ({
       ...el,
       id: crypto.randomUUID(),
@@ -163,6 +161,7 @@ function loadFromStorage(): PersistedState | null {
     return {
       elements,
       baseRotation: obj.baseRotation as BaseRotation,
+      revoluteAroundZOnly: (obj.revoluteAroundZOnly as boolean | undefined) ?? false,
     };
   } catch {
     return null;
@@ -184,16 +183,19 @@ if (persisted) {
 const initialBaseRotation = persisted?.baseRotation ?? { x: 0, y: 0, z: 0 };
 const initialBaseMatrix = buildBaseMatrix(initialBaseRotation);
 const initialElements = persisted?.elements ?? [];
-const initialAutoDH = false;
-const initialRecompute = recompute(initialElements, initialBaseMatrix, initialAutoDH);
+const initialRevoluteAroundZOnly = persisted?.revoluteAroundZOnly ?? false;
+const initialRecompute = recompute(
+  initialElements,
+  initialBaseMatrix,
+  initialRevoluteAroundZOnly,
+);
 
-export const useRobotStore = create<RobotState>((set, get) => ({
+export const useRobotStore = create<RobotState>((set) => ({
   elements: initialElements,
-  kinematics: initialRecompute.kinematics,
+  kinematics: initialRecompute,
   baseRotation: initialBaseRotation,
   baseMatrix: initialBaseMatrix,
-  autoDH: initialAutoDH,
-  dhFrames: initialRecompute.dhFrames,
+  revoluteAroundZOnly: initialRevoluteAroundZOnly,
 
   addJoint: (type, dhParams, rotationAxis, frameAngle, name, prismaticMax, prismaticDirection) => {
     jointCounter++;
@@ -220,8 +222,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
     };
     set((state) => {
       const elements = [...state.elements, newJoint];
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -242,16 +244,16 @@ export const useRobotStore = create<RobotState>((set, get) => ({
     };
     set((state) => {
       const elements = [...state.elements, newLink];
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
   removeElement: (id) => {
     set((state) => {
       const elements = state.elements.filter((el) => el.id !== id);
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -262,8 +264,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           ? { ...el, dhParams: { ...el.dhParams, [param]: value } }
           : el,
       );
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -272,8 +274,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, variableValue: value } : el,
       );
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -287,8 +289,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
             : 0;
         return { ...el, variableValue: resetValue };
       });
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -297,8 +299,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, minLimit: min, maxLimit: max } : el,
       );
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -329,8 +331,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           prismaticDirection: undefined,
         };
       });
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -348,8 +350,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           variableValue: clampedValue,
         };
       });
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -358,8 +360,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, rotationAxis: axis } : el,
       );
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -368,8 +370,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       const elements = state.elements.map((el) =>
         el.id === id ? { ...el, frameAngle: angle } : el,
       );
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -380,8 +382,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
         const sign = el.dhParams.d >= 0 ? 1 : -1;
         return { ...el, dhParams: { ...el.dhParams, d: sign * Math.abs(length) } };
       });
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -397,8 +399,8 @@ export const useRobotStore = create<RobotState>((set, get) => ({
           dhParams: { ...el.dhParams, d: sign * absLength },
         };
       });
-      const r = recompute(elements, state.baseMatrix, state.autoDH);
-      return { elements, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(elements, state.baseMatrix, state.revoluteAroundZOnly);
+      return { elements, kinematics };
     });
   },
 
@@ -413,27 +415,29 @@ export const useRobotStore = create<RobotState>((set, get) => ({
   setBaseRotation: (rotation) => {
     const baseMat = buildBaseMatrix(rotation);
     set((state) => {
-      const r = recompute(state.elements, baseMat, state.autoDH);
+      const kinematics = recompute(state.elements, baseMat, state.revoluteAroundZOnly);
       return {
         baseRotation: rotation,
         baseMatrix: baseMat,
-        kinematics: r.kinematics,
-        dhFrames: r.dhFrames,
+        kinematics,
       };
     });
   },
 
-  toggleAutoDH: () => {
+  setRevoluteAroundZOnly: (enabled) => {
     set((state) => {
-      const nextAutoDH = !state.autoDH;
-      const r = recompute(state.elements, state.baseMatrix, nextAutoDH);
-      return { autoDH: nextAutoDH, kinematics: r.kinematics, dhFrames: r.dhFrames };
+      const kinematics = recompute(state.elements, state.baseMatrix, enabled);
+      return {
+        revoluteAroundZOnly: enabled,
+        kinematics,
+      };
     });
   },
 
   importDiagram: (data) => {
     jointCounter = 0;
     linkCounter = 0;
+    const revoluteAroundZOnly = data.revoluteAroundZOnly ?? false;
     const elements: Joint[] = data.elements.map((el) => {
       if (el.elementKind === "joint") {
         jointCounter++;
@@ -443,15 +447,13 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       return { ...el, id: crypto.randomUUID() };
     });
     const baseMat = buildBaseMatrix(data.baseRotation);
-    set((state) => {
-      const r = recompute(elements, baseMat, state.autoDH);
-      return {
-        elements,
-        baseRotation: data.baseRotation,
-        baseMatrix: baseMat,
-        kinematics: r.kinematics,
-        dhFrames: r.dhFrames,
-      };
+    const kinematics = recompute(elements, baseMat, revoluteAroundZOnly);
+    set({
+      elements,
+      baseRotation: data.baseRotation,
+      baseMatrix: baseMat,
+      revoluteAroundZOnly,
+      kinematics,
     });
   },
 
@@ -462,13 +464,13 @@ export const useRobotStore = create<RobotState>((set, get) => ({
       elements: [],
       baseRotation: { x: 0, y: 0, z: 0 },
       baseMatrix: identity4(),
+      revoluteAroundZOnly: false,
       kinematics: emptyFK,
-      dhFrames: [],
     });
   },
 }));
 
 // Persist to localStorage on every state change
 useRobotStore.subscribe((state) => {
-  saveToStorage(state.elements, state.baseRotation);
+  saveToStorage(state.elements, state.baseRotation, state.revoluteAroundZOnly);
 });

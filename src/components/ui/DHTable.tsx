@@ -270,6 +270,8 @@ interface JointRowProps {
 }
 
 function JointRow({ element, onRemove, onUpdateDHParam, onUpdateType, onUpdateRotationAxis, onUpdateFrameAngle, onUpdateName }: JointRowProps) {
+  const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
+
   return (
     <tr className="group hover:bg-gray-800/30 transition-colors">
       <EditableNameCell
@@ -305,7 +307,11 @@ function JointRow({ element, onRemove, onUpdateDHParam, onUpdateType, onUpdateRo
                 element.rotationAxis === "y" ? "bg-green-500/15 text-green-400 hover:bg-green-500/25" :
                 "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
               }`}
-              title={`Rotation axis: ${element.rotationAxis.toUpperCase()} (click to cycle)`}
+              title={
+                revoluteAroundZOnly
+                  ? `Frame Z aligned to ${element.rotationAxis.toUpperCase()} (same physical rotation)`
+                  : `Rotation axis: ${element.rotationAxis.toUpperCase()} (click to cycle)`
+              }
             >
               {element.rotationAxis.toUpperCase()}
             </button>

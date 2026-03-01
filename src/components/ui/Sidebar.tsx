@@ -10,11 +10,12 @@ import TransformPanel from "./TransformPanel";
 import logger from "../../core/services/logger";
 
 function exportDiagram(): void {
-  const { elements, baseRotation } = useRobotStore.getState();
+  const { elements, baseRotation, revoluteAroundZOnly } = useRobotStore.getState();
   const data: DiagramData = {
-    version: "1.0.0",
+    version: "1.1.0",
     baseRotation,
     elements: elements.map(({ id: _id, ...rest }) => rest),
+    revoluteAroundZOnly,
   };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -34,6 +35,7 @@ function validateDiagramData(raw: unknown): DiagramData | null {
   const br = obj.baseRotation as Record<string, unknown>;
   if (typeof br.x !== "number" || typeof br.y !== "number" || typeof br.z !== "number") return null;
   if (!Array.isArray(obj.elements)) return null;
+  if (obj.revoluteAroundZOnly !== undefined && typeof obj.revoluteAroundZOnly !== "boolean") return null;
 
   for (const el of obj.elements) {
     if (typeof el !== "object" || el === null) return null;
@@ -56,8 +58,6 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
   const elements = useRobotStore((s) => s.elements);
   const clearAll = useRobotStore((s) => s.clearAll);
   const importDiagram = useRobotStore((s) => s.importDiagram);
-  const autoDH = useRobotStore((s) => s.autoDH);
-  const toggleAutoDH = useRobotStore((s) => s.toggleAutoDH);
   const hasJoints = elements.some((el) => el.elementKind === "joint");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,28 +145,6 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
         <Section title="Base Frame">
           <BaseFrameControls />
         </Section>
-
-        {/* Auto DH toggle */}
-        {hasJoints && (
-          <div className="flex items-center justify-between py-2">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              Auto DH
-            </span>
-            <button
-              onClick={toggleAutoDH}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                autoDH ? "bg-indigo-500" : "bg-gray-700"
-              }`}
-              title="Auto-orient frames using classical DH convention"
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  autoDH ? "translate-x-[18px]" : "translate-x-[3px]"
-                }`}
-              />
-            </button>
-          </div>
-        )}
 
         <Section title="Add Joint" defaultOpen>
           <DHParameterForm />

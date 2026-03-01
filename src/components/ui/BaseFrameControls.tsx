@@ -45,6 +45,8 @@ function isPresetActive(current: BaseRotation, preset: BaseRotation): boolean {
 export default function BaseFrameControls() {
   const baseRotation = useRobotStore((s) => s.baseRotation);
   const setBaseRotation = useRobotStore((s) => s.setBaseRotation);
+  const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
+  const setRevoluteAroundZOnly = useRobotStore((s) => s.setRevoluteAroundZOnly);
 
   function handleAngleChange(axis: keyof BaseRotation, deg: number) {
     setBaseRotation({ ...baseRotation, [axis]: deg * DEG_TO_RAD });
@@ -104,6 +106,28 @@ export default function BaseFrameControls() {
             );
           })}
         </div>
+      </div>
+
+      {/* Revolute axis mode */}
+      <div>
+        <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
+          Revolute Axis Mode
+        </label>
+        <button
+          type="button"
+          onClick={() => setRevoluteAroundZOnly(!revoluteAroundZOnly)}
+          className={`w-full px-2.5 py-2 rounded-md text-xs font-medium transition-all text-left ${
+            revoluteAroundZOnly
+              ? "bg-blue-600/20 text-blue-300 ring-1 ring-blue-400/60"
+              : "bg-gray-800/80 text-gray-300 hover:bg-gray-700"
+          }`}
+          title="Reorienta el marco del joint para que Z apunte al eje seleccionado sin cambiar el giro real"
+        >
+          {revoluteAroundZOnly ? "Z follows selected axis (ON)" : "Use raw axis labels (OFF)"}
+        </button>
+        <p className="mt-1 text-[10px] text-gray-500 leading-snug">
+          ON: el marco se remapea para que Z quede sobre el eje elegido (X/Y/Z), manteniendo el mismo giro del joint.
+        </p>
       </div>
     </div>
   );

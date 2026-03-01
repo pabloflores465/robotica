@@ -173,4 +173,22 @@ describe("computeForwardKinematics", () => {
     expect(ee[1]![3]).toBeCloseTo(1.0);
     expect(ee[2]![3]).toBeCloseTo(0);
   });
+
+  it("revoluteAroundZOnly option preserves physical kinematics", () => {
+    const joint = makeRevoluteJoint(1, 0, 0, 0, Math.PI / 2);
+    joint.rotationAxis = "x";
+
+    const regular = computeForwardKinematics([joint]);
+    const frameMode = computeForwardKinematics(
+      [joint],
+      undefined,
+      { revoluteAroundZOnly: true },
+    );
+    const eeA = regular.endEffectorTransform;
+    const eeB = frameMode.endEffectorTransform;
+
+    expect(eeB[0]![3]).toBeCloseTo(eeA[0]![3]!);
+    expect(eeB[1]![3]).toBeCloseTo(eeA[1]![3]!);
+    expect(eeB[2]![3]).toBeCloseTo(eeA[2]![3]!);
+  });
 });

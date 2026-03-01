@@ -1,6 +1,9 @@
 import type { Joint } from "../core/types/robot";
 import type { Matrix4x4 } from "../core/types/matrix";
-import { getEffectiveDHParams, computeDHMatrix } from "./dhTransform";
+import {
+  getEffectiveDHParams,
+  computeDHMatrix,
+} from "./dhTransform";
 import { multiplyMatrices, identity4, rotationAroundAxis } from "./matrixOps";
 
 export interface ForwardKinematicsResult {
@@ -12,6 +15,10 @@ export interface ForwardKinematicsResult {
   endEffectorTransform: Matrix4x4;
 }
 
+export interface ForwardKinematicsOptions {
+  revoluteAroundZOnly?: boolean;
+}
+
 /**
  * Computes forward kinematics for all joints.
  * Returns individual and cumulative transformation matrices.
@@ -20,19 +27,22 @@ export interface ForwardKinematicsResult {
 export function computeForwardKinematics(
   joints: Joint[],
   baseMatrix?: Matrix4x4,
+  options?: ForwardKinematicsOptions,
 ): ForwardKinematicsResult {
   const individualMatrices: Matrix4x4[] = [];
   const cumulativeMatrices: Matrix4x4[] = [];
   let cumulative = baseMatrix ?? identity4();
+  void options; // kept for compatibility with callers; current mode is display-frame only
 
   for (const joint of joints) {
     const effectiveParams = getEffectiveDHParams(joint);
-    const ai = computeDHMatrix(effectiveParams, joint.rotationAxis);
+    const kinematicAxis = joint.rotationAxis;
+    const ai = computeDHMatrix(effectiveParams, kinematicAxis);
 
     // Apply frame angle: rotate the output frame around its rotation axis
     const hasFrameAngle = Math.abs(joint.frameAngle) > 1e-10;
     const aiEffective = hasFrameAngle
-      ? multiplyMatrices(ai, rotationAroundAxis(joint.rotationAxis, joint.frameAngle))
+      ? multiplyMatrices(ai, rotationAroundAxis(kinematicAxis, joint.frameAngle))
       : ai;
 
     individualMatrices.push(aiEffective);
