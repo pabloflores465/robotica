@@ -719,6 +719,7 @@ export const useRobotStore = create<RobotState>((set, get) => ({
   },
 
   updateAutoJointVariable: (jointIndex, value) => {
+    skipAutoRecompute = true;
     set((state) => {
       const autoElements = state.autoElements.map((el, i) => {
         if (el.elementKind === "joint" && i === jointIndex) {
@@ -726,8 +727,27 @@ export const useRobotStore = create<RobotState>((set, get) => ({
         }
         return el;
       });
-      return { autoElements, autoKinematics: recompute(autoElements, state.autoBaseFrame) };
+
+      // Also sync to the corresponding manual joint so manual FK updates
+      let jCount = 0;
+      const elements = state.elements.map((el) => {
+        if (el.elementKind !== "joint") return el;
+        if (jCount === jointIndex) {
+          jCount++;
+          return { ...el, variableValue: value };
+        }
+        jCount++;
+        return el;
+      });
+
+      return {
+        autoElements,
+        autoKinematics: recompute(autoElements, state.autoBaseFrame),
+        elements,
+        kinematics: recompute(elements, state.baseMatrix),
+      };
     });
+    skipAutoRecompute = false;
   },
 
   updateAutoPrismaticConfig: (jointIndex, prismaticMax, prismaticDirection) => {
@@ -749,6 +769,9 @@ export const useRobotStore = create<RobotState>((set, get) => ({
   },
 }));
 
+// Flag to skip auto DH recomputation when only variable values changed
+let skipAutoRecompute = false;
+
 // Auto-recompute auto-DH when elements change while in auto mode
 let prevElements: Joint[] = initialElements;
 let prevBaseMatrix: Matrix4x4 = initialBaseMatrix;
@@ -757,7 +780,8 @@ useRobotStore.subscribe((state) => {
   saveToStorage(state.elements, state.baseRotation, state.autoDHMode, state.frameSelections);
 
   // Auto-recompute DH if elements or base changed while in auto mode
-  if (state.autoDHMode && (state.elements !== prevElements || state.baseMatrix !== prevBaseMatrix)) {
+  // Skip if only variable values changed (flagged by updateAutoJointVariable)
+  if (state.autoDHMode && !skipAutoRecompute && (state.elements !== prevElements || state.baseMatrix !== prevBaseMatrix)) {
     prevElements = state.elements;
     prevBaseMatrix = state.baseMatrix;
     const auto = recomputeAutoDH(state.elements, state.baseMatrix, state.frameSelections);
