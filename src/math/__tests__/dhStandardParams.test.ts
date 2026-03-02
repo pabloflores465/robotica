@@ -420,19 +420,26 @@ describe("computeStandardDHTable", () => {
   });
 
   describe("useCommonNormal = true (remap mode - all same axis)", () => {
-    it("negative alpha is flipped to positive with theta += pi", () => {
+    it("negative alpha is normalized via common-normal convention", () => {
       const j = makeRevoluteJoint("z", 0, 0, 0, -Math.PI / 2);
       const elements = [j];
       const rows = computeStandardDHTable(elements, "z", true);
-      expect(rows[0]!.thetaOffset).toBeCloseTo(Math.PI);
+      // Common-normal convention reconstructs physical Z via positive cyclic
+      // direction: Z rotated about Y by pi/2 = X. Common normal = Y.
+      // theta = signedAngle(X, Y, Z) = pi/2
+      expect(rows[0]!.thetaOffset).toBeCloseTo(Math.PI / 2);
       expect(rows[0]!.alpha).toBeCloseTo(Math.PI / 2);
     });
 
-    it("positive alpha remains unchanged", () => {
+    it("positive alpha also gets standard common-normal theta", () => {
       const j = makeRevoluteJoint("z", 0, 0, 0, Math.PI / 2);
       const elements = [j];
       const rows = computeStandardDHTable(elements, "z", true);
-      expect(rows[0]!.thetaOffset).toBeCloseTo(0);
+      // Even with positive alpha, the convention recomputes theta from
+      // the standard Z-axis placement (positive cyclic: Z->X via Y rotation).
+      // (theta=0, alpha=+pi/2) gives physical Z2=-Y, but standard convention
+      // places Z2=X, yielding the same result as negative alpha.
+      expect(rows[0]!.thetaOffset).toBeCloseTo(Math.PI / 2);
       expect(rows[0]!.alpha).toBeCloseTo(Math.PI / 2);
     });
 
@@ -444,7 +451,7 @@ describe("computeStandardDHTable", () => {
       expect(rows[0]!.alpha).toBeCloseTo(0);
     });
 
-    it("RPPR remap mode: flips Joint 2 negative alpha", () => {
+    it("RPPR remap mode: common-normal convention matches textbook", () => {
       // Simulates the user's RPPR robot in remap mode
       const elements: Joint[] = [
         makeLinkElement("+z", 1),               // d1 link
@@ -459,16 +466,16 @@ describe("computeStandardDHTable", () => {
       ];
       const rows = computeStandardDHTable(elements, "z", true);
       expect(rows).toHaveLength(4);
-      // Joint 1: no alpha, no flip
+      // Joint 1: no alpha, no change
       expect(rows[0]!.thetaOffset).toBeCloseTo(0);
       expect(rows[0]!.alpha).toBeCloseTo(0);
-      // Joint 2: alpha was -pi/2 -> flipped to (theta+pi, pi/2)
-      expect(rows[1]!.thetaOffset).toBeCloseTo(Math.PI);
+      // Joint 2: alpha=-pi/2 -> common-normal gives (pi/2, pi/2) matching textbook
+      expect(rows[1]!.thetaOffset).toBeCloseTo(Math.PI / 2);
       expect(rows[1]!.alpha).toBeCloseTo(Math.PI / 2);
-      // Joint 3: no alpha, no flip
+      // Joint 3: no alpha, no change
       expect(rows[2]!.thetaOffset).toBeCloseTo(0);
       expect(rows[2]!.alpha).toBeCloseTo(0);
-      // Joint 4: no alpha, no flip
+      // Joint 4: no alpha, no change
       expect(rows[3]!.thetaOffset).toBeCloseTo(0);
       expect(rows[3]!.alpha).toBeCloseTo(0);
     });

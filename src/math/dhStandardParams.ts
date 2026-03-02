@@ -5,6 +5,7 @@ import {
   normalize,
   isParallel,
   signedAngle,
+  rotateAboutAxis,
   UNIT_X,
   UNIT_Y,
   UNIT_Z,
@@ -74,16 +75,19 @@ function getInitialXAxis(referenceAxis: RotationAxis): Vec3 {
 
 /**
  * Apply the standard DH common-normal convention to recompute theta offsets
- * and alpha signs from axis transitions.
+ * and alpha values from axis transitions.
  *
- * Raw mode (different rotationAxis values): For each axis transition, X_i is
- * placed along normalize(Z_{i-1} x Z_i). The theta offset is the angle from
- * X_{i-1} to X_i about Z_{i-1}, and alpha is the angle from Z_{i-1} to Z_i
- * about X_i.
+ * Both modes track physical Z and X axes through the chain and compute
+ * X_i = normalize(Z_{i-1} x Z_i), then derive theta and alpha from
+ * signed angles.
  *
- * Remap mode (all same rotationAxis): For joints with non-zero dhParams.alpha,
- * normalizes the alpha sign to positive by flipping (theta += pi, alpha = -alpha)
- * when alpha is negative.
+ * Raw mode (different rotationAxis values): Z_i comes directly from the
+ * joint's rotationAxis vector.
+ *
+ * Remap mode (all same rotationAxis): Z_i is reconstructed from the alpha
+ * twist by rotating the previous Z about the frame's Y axis (positive cyclic
+ * direction) by |alpha|. This ensures the standard textbook convention where
+ * alpha is positive for perpendicular axis transitions (Z->X->Y->Z cycle).
  */
 function applyCommonNormalConvention(
   rows: StandardDHRow[],
@@ -93,26 +97,26 @@ function applyCommonNormalConvention(
     (row) => row.joint.rotationAxis === referenceAxis,
   );
 
-  if (allSameAxis) {
-    // Remap mode: normalize alpha signs
-    return rows.map((row) => {
-      if (row.alpha < -1e-10) {
-        return {
-          ...row,
-          thetaOffset: row.thetaOffset + Math.PI,
-          alpha: -row.alpha,
-        };
-      }
-      return row;
-    });
-  }
-
-  // Raw mode: full common-normal computation
   let prevX = getInitialXAxis(referenceAxis);
   let prevZ = AXIS_VEC[referenceAxis];
 
   return rows.map((row) => {
-    const currZ = AXIS_VEC[row.joint.rotationAxis];
+    // Determine the physical Z_i for this joint
+    let currZ: Vec3;
+    if (allSameAxis) {
+      // Remap mode: reconstruct physical Z from alpha twist.
+      // Use the positive cyclic direction (prevY) to rotate prevZ by |alpha|.
+      const rawAlpha = row.alpha;
+      if (Math.abs(rawAlpha) < 1e-10) {
+        // No twist: axes are parallel, nothing to adjust
+        return row;
+      }
+      const prevY = cross(prevZ, prevX);
+      currZ = rotateAboutAxis(prevZ, prevY, Math.abs(rawAlpha));
+    } else {
+      // Raw mode: Z_i is directly the joint's rotation axis vector
+      currZ = AXIS_VEC[row.joint.rotationAxis];
+    }
 
     if (isParallel(prevZ, currZ)) {
       // No axis change: X stays the same, no theta adjustment
@@ -133,6 +137,12 @@ function applyCommonNormalConvention(
     prevX = newX;
     prevZ = currZ;
 
+    if (allSameAxis) {
+      // Remap mode: theta and alpha are fully derived from the convention
+      return { ...row, thetaOffset: thetaAdj, alpha: alphaStd };
+    }
+
+    // Raw mode: add the joint's own dhParams contributions
     return {
       ...row,
       thetaOffset: row.joint.dhParams.theta + thetaAdj,
