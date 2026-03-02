@@ -10,14 +10,14 @@ export default function JointSliders() {
   const updatePrismaticConfig = useRobotStore((s) => s.updatePrismaticConfig);
 
   const jointElements = elements
-    .map((el, globalIndex) => ({ element: el, globalIndex }))
-    .filter(({ element }) => element.elementKind === "joint");
+    .filter((el) => el.elementKind === "joint")
+    .map((el, jointIndex) => ({ element: el, jointIndex: jointIndex + 1 }));
 
   if (jointElements.length === 0) return null;
 
   return (
     <div className="space-y-3">
-      {jointElements.map(({ element: joint }) => {
+      {jointElements.map(({ element: joint, jointIndex }) => {
         const isRevolute = joint.type === "revolute";
         const displayValue = isRevolute
           ? joint.variableValue * RAD_TO_DEG
@@ -42,10 +42,10 @@ export default function JointSliders() {
                   {isRevolute ? "R" : "P"}
                 </span>
                 <span className="text-xs text-gray-300 font-medium">
-                  {joint.name}
-                </span>
-                <span className="text-[10px] text-gray-500 font-mono">
-                  ({paramName})
+                  <span style={{ fontFamily: "serif", fontStyle: "italic" }}>
+                    {isRevolute ? "\u03B8" : "d"}
+                  </span>
+                  <sub className="text-gray-500">{jointIndex}</sub>
                 </span>
               </div>
               <div className="flex items-center gap-1.5">

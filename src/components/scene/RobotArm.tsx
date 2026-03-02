@@ -1,5 +1,6 @@
 import { useRef, useEffect, useMemo } from "react";
 import * as THREE from "three";
+import { Html } from "@react-three/drei";
 import { useRobotStore } from "../../store/robotStore";
 import {
   matrixToThreeMatrix4,
@@ -96,6 +97,51 @@ function LinkAnnotationGroup({ matrix, length, linkIndex, rotationAxis }: LinkAn
   );
 }
 
+const jointIdLabelStyle: React.CSSProperties = {
+  fontSize: "10px",
+  fontFamily: "monospace",
+  fontWeight: "bold",
+  background: "rgba(0,0,0,0.75)",
+  padding: "1px 5px",
+  borderRadius: "3px",
+  whiteSpace: "nowrap",
+  pointerEvents: "none",
+};
+
+interface JointIdentifierLabelProps {
+  matrix: Matrix4x4;
+  jointNumber: number;
+  isPrismatic: boolean;
+}
+
+function JointIdentifierLabel({ matrix, jointNumber, isPrismatic }: JointIdentifierLabelProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const threeMatrix = useMemo(() => matrixToThreeMatrix4(matrix), [matrix]);
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.matrix.copy(threeMatrix);
+      groupRef.current.matrixWorldNeedsUpdate = true;
+    }
+  }, [threeMatrix]);
+
+  const color = isPrismatic ? "#67e8f9" : "#fbbf24";
+  const borderColor = isPrismatic ? "rgba(103,232,249,0.3)" : "rgba(251,191,36,0.3)";
+
+  return (
+    <group ref={groupRef} matrixAutoUpdate={false}>
+      <Html center style={{ pointerEvents: "none" }} position={[0, 0.25, 0]}>
+        <div style={{ ...jointIdLabelStyle, color, border: `1px solid ${borderColor}` }}>
+          <span style={{ fontFamily: "serif", fontStyle: "italic" }}>
+            {isPrismatic ? "d" : "\u03B8"}
+          </span>
+          <sub>{jointNumber}</sub>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 interface LinkData {
   key: string;
   start: THREE.Vector3;
@@ -145,6 +191,23 @@ export default function RobotArm() {
   const baseMatrix = useRobotStore((s) => s.baseMatrix);
   const revoluteAroundZOnly = useRobotStore((s) => s.revoluteAroundZOnly);
   const revoluteFrameAxis = useRobotStore((s) => s.revoluteFrameAxis);
+
+  // Precompute joint-specific and link-specific indices (0-based)
+  // so 3D labels use correct subscripts (e.g. theta_1, d_2, L_1)
+  const { jointIndexMap, linkIndexMap } = useMemo(() => {
+    const jMap = new Map<string, number>();
+    const lMap = new Map<string, number>();
+    let jCount = 0;
+    let lCount = 0;
+    for (const el of elements) {
+      if (el.elementKind === "joint") {
+        jMap.set(el.id, jCount++);
+      } else {
+        lMap.set(el.id, lCount++);
+      }
+    }
+    return { jointIndexMap: jMap, linkIndexMap: lMap };
+  }, [elements]);
 
   const links = useMemo(() => {
     const result: LinkData[] = [];
@@ -215,7 +278,7 @@ export default function RobotArm() {
             matrix={annotationMatrix}
             theta={effective.theta}
             d={effective.d}
-            jointIndex={i}
+            jointIndex={jointIndexMap.get(element.id) ?? 0}
             rotationAxis={annotationAxis}
             jointType={element.type}
           />
@@ -233,8 +296,30 @@ export default function RobotArm() {
             key={`link-ann-${element.id}`}
             matrix={labelMatrix}
             length={element.dhParams.d}
-            linkIndex={idx}
+            linkIndex={linkIndexMap.get(element.id) ?? 0}
             rotationAxis={element.rotationAxis}
+          />
+        );
+      })}
+
+      {/* Joint identifier labels (always visible) */}
+      {elements.map((element, i) => {
+        if (element.elementKind !== "joint" || element.hidden) return null;
+        const matrix = kinematics.cumulativeMatrices[i];
+        if (!matrix) return null;
+        const jIdx = (jointIndexMap.get(element.id) ?? 0) + 1;
+        const displayMatrix = getDisplayMatrix(
+          matrix,
+          element,
+          revoluteAroundZOnly,
+          revoluteFrameAxis,
+        );
+        return (
+          <JointIdentifierLabel
+            key={`jlabel-${element.id}`}
+            matrix={displayMatrix}
+            jointNumber={jIdx}
+            isPrismatic={element.type === "prismatic"}
           />
         );
       })}

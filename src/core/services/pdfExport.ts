@@ -323,7 +323,7 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   // standard DH table so they match the parameter table displayed above.
   const matrixEntries: Array<{
     index: number;
-    name: string;
+    isPrismatic: boolean;
     axisLabel: string;
     thetaConst: number;
     qTheta: number;
@@ -341,7 +341,7 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
       const qD = dhRow.isPrismatic ? joint.variableValue : 0;
       matrixEntries.push({
         index: dhRow.index,
-        name: joint.name,
+        isPrismatic: dhRow.isPrismatic,
         axisLabel: revoluteFrameAxis.toUpperCase(),
         thetaConst: dhRow.thetaOffset,
         qTheta,
@@ -367,7 +367,7 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
       const qD = element.type === "prismatic" ? element.variableValue : 0;
       matrixEntries.push({
         index: index + 1,
-        name: element.name,
+        isPrismatic: element.type === "prismatic",
         axisLabel: element.rotationAxis.toUpperCase(),
         thetaConst: element.dhParams.theta,
         qTheta,
@@ -389,8 +389,11 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
     doc.setTextColor(35, 42, 55);
+    const paramLabel = entry.isPrismatic
+      ? `d_${entry.index}`
+      : `theta_${entry.index}`;
     doc.text(
-      `${entry.index}. ${entry.name} (axis ${entry.axisLabel})`,
+      `${entry.index}. ${paramLabel} (axis ${entry.axisLabel})`,
       marginLeft,
       y,
     );
