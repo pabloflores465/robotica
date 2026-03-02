@@ -2,7 +2,11 @@ import jsPDF from "jspdf";
 import type { Joint, RotationAxis } from "../types/robot";
 import { computeDHMatrix, getEffectiveDHParams } from "../../math/dhTransform";
 import { multiplyMatrices, rotationAroundAxis } from "../../math/matrixOps";
-import { computeStandardDHTable } from "../../math/dhStandardParams";
+import {
+  computeStandardDHTable,
+  type StandardDHRow,
+} from "../../math/dhStandardParams";
+import type { Matrix4x4 } from "../types/matrix";
 
 export interface DHReportOptions {
   elements: Joint[];
@@ -116,12 +120,10 @@ function buildRawDHRows(
 }
 
 function buildRemappedDHRows(
-  elements: Joint[],
-  referenceAxis: RotationAxis,
+  standardRows: StandardDHRow[],
   assignConstantDLabel: (value: number) => string,
   nextLengthLabel: (value: number) => string,
 ): DHRowFormatted[] {
-  const standardRows = computeStandardDHTable(elements, referenceAxis);
   return standardRows.map((row) => {
     const thetaBase = `theta_${row.index}`;
     const theta =
@@ -227,8 +229,12 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   // in the a/d parameters of their adjacent joints).
   const jointElements = elements.filter((el) => el.elementKind === "joint");
 
-  const dhRows = revoluteAroundZOnly
-    ? buildRemappedDHRows(elements, revoluteFrameAxis, assignConstantDLabel, nextLengthLabel)
+  const standardRows = revoluteAroundZOnly
+    ? computeStandardDHTable(elements, revoluteFrameAxis)
+    : null;
+
+  const dhRows = standardRows
+    ? buildRemappedDHRows(standardRows, assignConstantDLabel, nextLengthLabel)
     : buildRawDHRows(jointElements, assignConstantDLabel, nextLengthLabel);
 
   const tableX = marginLeft + 18;
@@ -312,15 +318,71 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   doc.text("Effective variables and A_i matrix", marginLeft, y);
   y += 14;
 
-  for (let index = 0; index < jointElements.length; index++) {
-    const element = jointElements[index]!;
-    const isRevolute = element.type === "revolute";
-    const isPrismatic = element.type === "prismatic";
-    const qTheta = isRevolute ? element.variableValue : 0;
-    const qD = isPrismatic ? element.variableValue : 0;
-    const thetaEffective = element.dhParams.theta + qTheta;
-    const dEffective = element.dhParams.d + qD;
-    const matrix = computeElementMatrix(element);
+  // Build per-joint matrix entries from either standard DH rows (remap ON) or raw params (OFF).
+  // When remap is ON, the A_i matrices use the absorbed d/a and computed alpha from the
+  // standard DH table so they match the parameter table displayed above.
+  const matrixEntries: Array<{
+    index: number;
+    name: string;
+    axisLabel: string;
+    thetaConst: number;
+    qTheta: number;
+    dConst: number;
+    qD: number;
+    alpha: number;
+    a: number;
+    matrix: Matrix4x4;
+  }> = [];
+
+  if (standardRows) {
+    for (const dhRow of standardRows) {
+      const joint = dhRow.joint;
+      const qTheta = dhRow.isRevolute ? joint.variableValue : 0;
+      const qD = dhRow.isPrismatic ? joint.variableValue : 0;
+      matrixEntries.push({
+        index: dhRow.index,
+        name: joint.name,
+        axisLabel: revoluteFrameAxis.toUpperCase(),
+        thetaConst: dhRow.thetaOffset,
+        qTheta,
+        dConst: dhRow.d,
+        qD,
+        alpha: dhRow.alpha,
+        a: dhRow.a,
+        matrix: computeDHMatrix(
+          {
+            theta: dhRow.thetaOffset + qTheta,
+            d: dhRow.d + qD,
+            a: dhRow.a,
+            alpha: dhRow.alpha,
+          },
+          revoluteFrameAxis,
+        ),
+      });
+    }
+  } else {
+    for (let index = 0; index < jointElements.length; index++) {
+      const element = jointElements[index]!;
+      const qTheta = element.type === "revolute" ? element.variableValue : 0;
+      const qD = element.type === "prismatic" ? element.variableValue : 0;
+      matrixEntries.push({
+        index: index + 1,
+        name: element.name,
+        axisLabel: element.rotationAxis.toUpperCase(),
+        thetaConst: element.dhParams.theta,
+        qTheta,
+        dConst: element.dhParams.d,
+        qD,
+        alpha: element.dhParams.alpha,
+        a: element.dhParams.a,
+        matrix: computeElementMatrix(element),
+      });
+    }
+  }
+
+  for (const entry of matrixEntries) {
+    const thetaEffective = entry.thetaConst + entry.qTheta;
+    const dEffective = entry.dConst + entry.qD;
 
     ensureSpace(106);
 
@@ -328,7 +390,7 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
     doc.setFontSize(9.5);
     doc.setTextColor(35, 42, 55);
     doc.text(
-      `${index + 1}. ${element.name} (axis ${element.rotationAxis.toUpperCase()})`,
+      `${entry.index}. ${entry.name} (axis ${entry.axisLabel})`,
       marginLeft,
       y,
     );
@@ -338,19 +400,19 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
     doc.setFontSize(8.5);
     doc.setTextColor(70, 78, 92);
     doc.text(
-      `theta* = theta + q_theta = ${formatNumber(element.dhParams.theta)} + ${formatNumber(qTheta)} = ${formatNumber(thetaEffective)} rad`,
+      `theta* = theta + q_theta = ${formatNumber(entry.thetaConst)} + ${formatNumber(entry.qTheta)} = ${formatNumber(thetaEffective)} rad`,
       marginLeft + 4,
       y,
     );
     y += 10;
     doc.text(
-      `d* = d + q_d = ${formatNumber(element.dhParams.d)} + ${formatNumber(qD)} = ${formatNumber(dEffective)}`,
+      `d* = d + q_d = ${formatNumber(entry.dConst)} + ${formatNumber(entry.qD)} = ${formatNumber(dEffective)}`,
       marginLeft + 4,
       y,
     );
     y += 10;
     doc.text(
-      `alpha = ${formatNumber(element.dhParams.alpha)} rad (${formatNumber(element.dhParams.alpha * RAD_TO_DEG, 2)} deg), r = ${formatNumber(element.dhParams.a)}`,
+      `alpha = ${formatNumber(entry.alpha)} rad (${formatNumber(entry.alpha * RAD_TO_DEG, 2)} deg), r = ${formatNumber(entry.a)}`,
       marginLeft + 4,
       y,
     );
@@ -359,14 +421,14 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(95, 105, 122);
-    doc.text(`A_${index + 1}:`, marginLeft + 4, y);
+    doc.text(`A_${entry.index}:`, marginLeft + 4, y);
     y += 10;
 
     doc.setFont("courier", "normal");
     doc.setFontSize(8);
     doc.setTextColor(45, 52, 65);
-    for (const row of matrix) {
-      const line = `[ ${row.map((value) => formatSigned(value)).join("  ")} ]`;
+    for (const matRow of entry.matrix) {
+      const line = `[ ${matRow.map((value) => formatSigned(value)).join("  ")} ]`;
       doc.text(line, marginLeft + 14, y);
       y += 9;
     }
