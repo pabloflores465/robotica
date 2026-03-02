@@ -16,6 +16,7 @@ function exportDiagram(): void {
     baseRotation,
     revoluteAroundZOnly,
     revoluteFrameAxis,
+    useCommonNormalConvention,
   } = useRobotStore.getState();
   const data: DiagramData = {
     version: "1.2.0",
@@ -23,6 +24,7 @@ function exportDiagram(): void {
     elements: elements.map(({ id: _id, ...rest }) => rest),
     revoluteAroundZOnly,
     revoluteFrameAxis,
+    useCommonNormalConvention,
   };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -35,12 +37,13 @@ function exportDiagram(): void {
 }
 
 function exportPdfReport(): void {
-  const { elements, revoluteAroundZOnly, revoluteFrameAxis } = useRobotStore.getState();
+  const { elements, revoluteAroundZOnly, revoluteFrameAxis, useCommonNormalConvention } = useRobotStore.getState();
   if (elements.length === 0) return;
   downloadDhReportPdf({
     elements,
     revoluteAroundZOnly,
     revoluteFrameAxis,
+    useCommonNormalConvention,
   });
 }
 
@@ -59,6 +62,7 @@ function validateDiagramData(raw: unknown): DiagramData | null {
     obj.revoluteFrameAxis !== "y" &&
     obj.revoluteFrameAxis !== "z"
   ) return null;
+  if (obj.useCommonNormalConvention !== undefined && typeof obj.useCommonNormalConvention !== "boolean") return null;
 
   for (const el of obj.elements) {
     if (typeof el !== "object" || el === null) return null;

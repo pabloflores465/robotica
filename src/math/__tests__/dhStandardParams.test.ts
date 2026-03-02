@@ -338,4 +338,139 @@ describe("computeStandardDHTable", () => {
     const rows = computeStandardDHTable(elements, "z");
     expect(rows[0]!.thetaOffset).toBeCloseTo(thetaConst);
   });
+
+  // --- Common-normal convention tests ---
+
+  describe("useCommonNormal = true (raw mode)", () => {
+    it("z->x transition: adds theta_adj = pi/2, alpha stays pi/2", () => {
+      const elements = [
+        makeRevoluteJoint("z"),
+        makeRevoluteJoint("x"),
+      ];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows).toHaveLength(2);
+      // Joint 1: z->z, no adjustment
+      expect(rows[0]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[0]!.alpha).toBeCloseTo(0);
+      // Joint 2: z->x, common-normal X_2 = Z x X = Y
+      // theta_adj = angle from X_prev=[1,0,0] to X_new=[0,1,0] about Z = pi/2
+      // alpha_std = angle from Z to X about Y = pi/2
+      expect(rows[1]!.thetaOffset).toBeCloseTo(Math.PI / 2);
+      expect(rows[1]!.alpha).toBeCloseTo(Math.PI / 2);
+    });
+
+    it("z->y transition: adds theta_adj = pi, alpha = pi/2", () => {
+      const elements = [
+        makeRevoluteJoint("z"),
+        makeRevoluteJoint("y"),
+      ];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows).toHaveLength(2);
+      // Joint 2: z->y, common-normal X_2 = Z x Y = -X = [-1,0,0]
+      // theta_adj = angle from [1,0,0] to [-1,0,0] about Z = pi
+      // alpha_std = angle from Z to Y about -X = pi/2
+      expect(rows[1]!.thetaOffset).toBeCloseTo(Math.PI);
+      expect(rows[1]!.alpha).toBeCloseTo(Math.PI / 2);
+    });
+
+    it("x->z transition: adds theta_adj, positive alpha", () => {
+      const elements = [
+        makeRevoluteJoint("x"),
+        makeRevoluteJoint("z"),
+      ];
+      const rows = computeStandardDHTable(elements, "x", true);
+      expect(rows).toHaveLength(2);
+      // Joint 2: x->z transition
+      // Z_prev = X = [1,0,0], Z_curr = Z = [0,0,1]
+      // Common normal = X_prev x Z_curr? No: X_prev cross Z_curr
+      // Actually: Z_prev x Z_curr = [1,0,0] x [0,0,1] = [0,-1,0] = -Y
+      // X_new = [0,-1,0]
+      // Initial X for ref axis "x" is Y = [0,1,0]
+      // theta_adj = angle from [0,1,0] to [0,-1,0] about [1,0,0] = pi
+      expect(rows[1]!.thetaOffset).toBeCloseTo(Math.PI);
+      // alpha_std = angle from [1,0,0] to [0,0,1] about [0,-1,0] = pi/2
+      expect(rows[1]!.alpha).toBeCloseTo(Math.PI / 2);
+    });
+
+    it("same axis: no adjustment even with useCommonNormal", () => {
+      const elements = [
+        makeRevoluteJoint("z"),
+        makeRevoluteJoint("z"),
+      ];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows[0]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[0]!.alpha).toBeCloseTo(0);
+      expect(rows[1]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[1]!.alpha).toBeCloseTo(0);
+    });
+
+    it("preserves d and a values with common-normal convention", () => {
+      const elements = [
+        makeLinkElement("+z", 1.5),
+        makeRevoluteJoint("z"),
+        makeLinkElement("+x", 2),
+        makeRevoluteJoint("x"),
+      ];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows[0]!.d).toBeCloseTo(1.5);
+      expect(rows[0]!.a).toBeCloseTo(2);
+      expect(rows[1]!.d).toBeCloseTo(0);
+      expect(rows[1]!.a).toBeCloseTo(0);
+    });
+  });
+
+  describe("useCommonNormal = true (remap mode - all same axis)", () => {
+    it("negative alpha is flipped to positive with theta += pi", () => {
+      const j = makeRevoluteJoint("z", 0, 0, 0, -Math.PI / 2);
+      const elements = [j];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows[0]!.thetaOffset).toBeCloseTo(Math.PI);
+      expect(rows[0]!.alpha).toBeCloseTo(Math.PI / 2);
+    });
+
+    it("positive alpha remains unchanged", () => {
+      const j = makeRevoluteJoint("z", 0, 0, 0, Math.PI / 2);
+      const elements = [j];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows[0]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[0]!.alpha).toBeCloseTo(Math.PI / 2);
+    });
+
+    it("zero alpha remains unchanged", () => {
+      const j = makeRevoluteJoint("z", 0, 0, 0, 0);
+      const elements = [j];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows[0]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[0]!.alpha).toBeCloseTo(0);
+    });
+
+    it("RPPR remap mode: flips Joint 2 negative alpha", () => {
+      // Simulates the user's RPPR robot in remap mode
+      const elements: Joint[] = [
+        makeLinkElement("+z", 1),               // d1 link
+        makeRevoluteJoint("z"),                  // Joint 1 (revolute)
+        {                                        // Joint 2 (prismatic, alpha=-pi/2)
+          ...makePrismaticJoint("z"),
+          dhParams: { theta: 0, d: 0, a: 0, alpha: -Math.PI / 2 },
+        },
+        makePrismaticJoint("z"),                 // Joint 3 (prismatic)
+        makeLinkElement("+z", 0.5),              // l4 link
+        makeRevoluteJoint("z"),                  // Joint 4 (revolute)
+      ];
+      const rows = computeStandardDHTable(elements, "z", true);
+      expect(rows).toHaveLength(4);
+      // Joint 1: no alpha, no flip
+      expect(rows[0]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[0]!.alpha).toBeCloseTo(0);
+      // Joint 2: alpha was -pi/2 -> flipped to (theta+pi, pi/2)
+      expect(rows[1]!.thetaOffset).toBeCloseTo(Math.PI);
+      expect(rows[1]!.alpha).toBeCloseTo(Math.PI / 2);
+      // Joint 3: no alpha, no flip
+      expect(rows[2]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[2]!.alpha).toBeCloseTo(0);
+      // Joint 4: no alpha, no flip
+      expect(rows[3]!.thetaOffset).toBeCloseTo(0);
+      expect(rows[3]!.alpha).toBeCloseTo(0);
+    });
+  });
 });

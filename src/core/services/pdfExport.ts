@@ -12,6 +12,7 @@ export interface DHReportOptions {
   elements: Joint[];
   revoluteAroundZOnly: boolean;
   revoluteFrameAxis: RotationAxis;
+  useCommonNormalConvention: boolean;
 }
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -337,7 +338,7 @@ function buildRemappedDHRows(
 // ---- PDF generation ----
 
 export function downloadDhReportPdf(options: DHReportOptions): void {
-  const { elements, revoluteAroundZOnly, revoluteFrameAxis } = options;
+  const { elements, revoluteAroundZOnly, revoluteFrameAxis, useCommonNormalConvention } = options;
   if (elements.length === 0) return;
 
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -373,7 +374,7 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   doc.text(`Generated: ${dateLabel}`, marginLeft, y);
   y += 12;
   doc.text(
-    `Frame remap mode: ${revoluteAroundZOnly ? "ON" : "OFF"} | Selected frame axis: ${revoluteFrameAxis.toUpperCase()}`,
+    `Frame remap mode: ${revoluteAroundZOnly ? "ON" : "OFF"} | Selected frame axis: ${revoluteFrameAxis.toUpperCase()} | Common-normal convention: ${useCommonNormalConvention ? "ON" : "OFF"}`,
     marginLeft,
     y,
   );
@@ -401,7 +402,7 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   const jointElements = elements.filter((el) => el.elementKind === "joint");
 
   const standardRows = revoluteAroundZOnly
-    ? computeStandardDHTable(elements, revoluteFrameAxis)
+    ? computeStandardDHTable(elements, revoluteFrameAxis, useCommonNormalConvention)
     : null;
 
   const dhRows = standardRows

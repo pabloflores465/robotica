@@ -1,5 +1,15 @@
 import type { Joint, RotationAxis } from "../core/types/robot";
-import { cross, dot, UNIT_X, UNIT_Y, UNIT_Z, type Vec3 } from "./vec3";
+import {
+  cross,
+  dot,
+  normalize,
+  isParallel,
+  signedAngle,
+  UNIT_X,
+  UNIT_Y,
+  UNIT_Z,
+  type Vec3,
+} from "./vec3";
 
 /** A single row in the standard DH parameter table */
 export interface StandardDHRow {
@@ -51,6 +61,87 @@ function computeAlpha(prevAxis: RotationAxis, currAxis: RotationAxis): number {
 }
 
 /**
+ * Returns the initial X axis direction for a given Z reference axis.
+ * Follows the cyclic pattern: z->x, x->y, y->z.
+ */
+function getInitialXAxis(referenceAxis: RotationAxis): Vec3 {
+  switch (referenceAxis) {
+    case "z": return UNIT_X;
+    case "x": return UNIT_Y;
+    case "y": return UNIT_Z;
+  }
+}
+
+/**
+ * Apply the standard DH common-normal convention to recompute theta offsets
+ * and alpha signs from axis transitions.
+ *
+ * Raw mode (different rotationAxis values): For each axis transition, X_i is
+ * placed along normalize(Z_{i-1} x Z_i). The theta offset is the angle from
+ * X_{i-1} to X_i about Z_{i-1}, and alpha is the angle from Z_{i-1} to Z_i
+ * about X_i.
+ *
+ * Remap mode (all same rotationAxis): For joints with non-zero dhParams.alpha,
+ * normalizes the alpha sign to positive by flipping (theta += pi, alpha = -alpha)
+ * when alpha is negative.
+ */
+function applyCommonNormalConvention(
+  rows: StandardDHRow[],
+  referenceAxis: RotationAxis,
+): StandardDHRow[] {
+  const allSameAxis = rows.every(
+    (row) => row.joint.rotationAxis === referenceAxis,
+  );
+
+  if (allSameAxis) {
+    // Remap mode: normalize alpha signs
+    return rows.map((row) => {
+      if (row.alpha < -1e-10) {
+        return {
+          ...row,
+          thetaOffset: row.thetaOffset + Math.PI,
+          alpha: -row.alpha,
+        };
+      }
+      return row;
+    });
+  }
+
+  // Raw mode: full common-normal computation
+  let prevX = getInitialXAxis(referenceAxis);
+  let prevZ = AXIS_VEC[referenceAxis];
+
+  return rows.map((row) => {
+    const currZ = AXIS_VEC[row.joint.rotationAxis];
+
+    if (isParallel(prevZ, currZ)) {
+      // No axis change: X stays the same, no theta adjustment
+      prevZ = currZ;
+      return row;
+    }
+
+    // X_i = normalize(Z_{i-1} x Z_i) -- common normal direction
+    const newX = normalize(cross(prevZ, currZ));
+
+    // theta_adj = signed angle from X_{i-1} to X_i about Z_{i-1}
+    const thetaAdj = signedAngle(prevX, newX, prevZ);
+
+    // alpha_std = signed angle from Z_{i-1} to Z_i about X_i
+    const alphaStd = signedAngle(prevZ, currZ, newX);
+
+    // Update tracking for next iteration
+    prevX = newX;
+    prevZ = currZ;
+
+    return {
+      ...row,
+      thetaOffset: row.joint.dhParams.theta + thetaAdj,
+      alpha: alphaStd + row.joint.dhParams.alpha,
+    };
+  });
+}
+
+/**
  * Compute standard DH parameter rows by absorbing link elements into
  * adjacent joints' parameters.
  *
@@ -66,10 +157,15 @@ function computeAlpha(prevAxis: RotationAxis, currAxis: RotationAxis): number {
  * Link contributions to d use Math.abs() because in frame-remap mode the
  * sign of the offset is encoded in the frame assignment, not in the link
  * modeling direction (same convention already used for a).
+ *
+ * @param useCommonNormal - when true, apply the standard common-normal convention
+ *   for X-axis placement. In raw mode this computes theta offsets from axis
+ *   transitions; in remap mode it normalizes alpha signs to positive.
  */
 export function computeStandardDHTable(
   elements: Joint[],
   referenceAxis: RotationAxis,
+  useCommonNormal?: boolean,
 ): StandardDHRow[] {
   // Find indices of all joint elements in the flat list
   const jointIndices: number[] = [];
@@ -128,6 +224,10 @@ export function computeStandardDHTable(
       isRevolute: joint.type === "revolute",
       isPrismatic: joint.type === "prismatic",
     });
+  }
+
+  if (useCommonNormal) {
+    return applyCommonNormalConvention(rows, referenceAxis);
   }
 
   return rows;

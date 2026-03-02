@@ -50,6 +50,8 @@ export default function BaseFrameControls() {
   const revoluteFrameAxis = useRobotStore((s) => s.revoluteFrameAxis);
   const setRevoluteAroundZOnly = useRobotStore((s) => s.setRevoluteAroundZOnly);
   const setRevoluteFrameAxis = useRobotStore((s) => s.setRevoluteFrameAxis);
+  const useCommonNormalConvention = useRobotStore((s) => s.useCommonNormalConvention);
+  const setUseCommonNormalConvention = useRobotStore((s) => s.setUseCommonNormalConvention);
 
   function handleAngleChange(axis: keyof BaseRotation, deg: number) {
     setBaseRotation({ ...baseRotation, [axis]: deg * DEG_TO_RAD });
@@ -137,6 +139,25 @@ export default function BaseFrameControls() {
         </select>
         <p className="mt-1 text-[10px] text-gray-500 leading-snug">
           El eje elegido (X/Y/Z) se remapea al eje real del joint, manteniendo exactamente el mismo giro fisico.
+        </p>
+      </div>
+
+      {/* Standard DH convention toggle */}
+      <div>
+        <label className="flex items-center gap-2 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={useCommonNormalConvention}
+            onChange={(e) => setUseCommonNormalConvention(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500/30 focus:ring-offset-0 cursor-pointer"
+          />
+          <span className="text-[11px] text-gray-500 uppercase tracking-wider font-medium group-hover:text-gray-300 transition-colors">
+            Standard DH Convention
+          </span>
+        </label>
+        <p className="mt-1 text-[10px] text-gray-500 leading-snug ml-5.5">
+          Apply common-normal rule for X-axis placement (standard textbook convention).
+          Affects DH table and PDF only.
         </p>
       </div>
     </div>

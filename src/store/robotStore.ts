@@ -41,6 +41,8 @@ interface RobotState {
   revoluteAroundZOnly: boolean;
   /** Which local axis (X/Y/Z) is used as reference when frame remap mode is enabled */
   revoluteFrameAxis: RotationAxis;
+  /** If true, apply the standard DH common-normal convention for X-axis placement */
+  useCommonNormalConvention: boolean;
 
   addJoint: (
     type: JointType,
@@ -76,6 +78,7 @@ interface RobotState {
   setBaseRotation: (rotation: BaseRotation) => void;
   setRevoluteAroundZOnly: (enabled: boolean) => void;
   setRevoluteFrameAxis: (axis: RotationAxis) => void;
+  setUseCommonNormalConvention: (enabled: boolean) => void;
   clearAll: () => void;
   importDiagram: (data: DiagramData) => void;
 }
@@ -87,6 +90,7 @@ export interface DiagramData {
   elements: Omit<Joint, "id">[];
   revoluteAroundZOnly?: boolean;
   revoluteFrameAxis?: RotationAxis;
+  useCommonNormalConvention?: boolean;
 }
 
 function buildBaseMatrix(rot: BaseRotation): Matrix4x4 {
@@ -125,6 +129,7 @@ function saveToStorage(
   baseRotation: BaseRotation,
   revoluteAroundZOnly: boolean,
   revoluteFrameAxis: RotationAxis,
+  useCommonNormalConvention: boolean,
 ): void {
   try {
     const data: DiagramData = {
@@ -133,6 +138,7 @@ function saveToStorage(
       elements: elements.map(({ id: _id, ...rest }) => rest),
       revoluteAroundZOnly,
       revoluteFrameAxis,
+      useCommonNormalConvention,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -145,6 +151,7 @@ interface PersistedState {
   baseRotation: BaseRotation;
   revoluteAroundZOnly: boolean;
   revoluteFrameAxis: RotationAxis;
+  useCommonNormalConvention: boolean;
 }
 
 function loadFromStorage(): PersistedState | null {
@@ -170,6 +177,12 @@ function loadFromStorage(): PersistedState | null {
     ) {
       return null;
     }
+    if (
+      obj.useCommonNormalConvention !== undefined &&
+      typeof obj.useCommonNormalConvention !== "boolean"
+    ) {
+      return null;
+    }
     const br = obj.baseRotation as Record<string, unknown>;
     if (typeof br.x !== "number" || typeof br.y !== "number" || typeof br.z !== "number") return null;
     const elements: Joint[] = (obj.elements as Omit<Joint, "id">[]).map((el) => ({
@@ -181,6 +194,7 @@ function loadFromStorage(): PersistedState | null {
       baseRotation: obj.baseRotation as BaseRotation,
       revoluteAroundZOnly: (obj.revoluteAroundZOnly as boolean | undefined) ?? false,
       revoluteFrameAxis: (obj.revoluteFrameAxis as RotationAxis | undefined) ?? "z",
+      useCommonNormalConvention: (obj.useCommonNormalConvention as boolean | undefined) ?? false,
     };
   } catch {
     return null;
@@ -204,6 +218,7 @@ const initialBaseMatrix = buildBaseMatrix(initialBaseRotation);
 const initialElements = persisted?.elements ?? [];
 const initialRevoluteAroundZOnly = persisted?.revoluteAroundZOnly ?? false;
 const initialRevoluteFrameAxis = persisted?.revoluteFrameAxis ?? "z";
+const initialUseCommonNormalConvention = persisted?.useCommonNormalConvention ?? false;
 const initialRecompute = recompute(
   initialElements,
   initialBaseMatrix,
@@ -217,6 +232,7 @@ export const useRobotStore = create<RobotState>((set) => ({
   baseMatrix: initialBaseMatrix,
   revoluteAroundZOnly: initialRevoluteAroundZOnly,
   revoluteFrameAxis: initialRevoluteFrameAxis,
+  useCommonNormalConvention: initialUseCommonNormalConvention,
 
   addJoint: (type, dhParams, rotationAxis, frameAngle, name, prismaticMax, prismaticDirection) => {
     jointCounter++;
@@ -471,11 +487,18 @@ export const useRobotStore = create<RobotState>((set) => ({
     }));
   },
 
+  setUseCommonNormalConvention: (enabled) => {
+    set(() => ({
+      useCommonNormalConvention: enabled,
+    }));
+  },
+
   importDiagram: (data) => {
     jointCounter = 0;
     linkCounter = 0;
     const revoluteAroundZOnly = data.revoluteAroundZOnly ?? false;
     const revoluteFrameAxis = data.revoluteFrameAxis ?? "z";
+    const useCommonNormalConvention = data.useCommonNormalConvention ?? false;
     const elements: Joint[] = data.elements.map((el) => {
       if (el.elementKind === "joint") {
         jointCounter++;
@@ -492,6 +515,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       baseMatrix: baseMat,
       revoluteAroundZOnly,
       revoluteFrameAxis,
+      useCommonNormalConvention,
       kinematics,
     });
   },
@@ -505,6 +529,7 @@ export const useRobotStore = create<RobotState>((set) => ({
       baseMatrix: identity4(),
       revoluteAroundZOnly: false,
       revoluteFrameAxis: "z",
+      useCommonNormalConvention: false,
       kinematics: emptyFK,
     });
   },
@@ -517,5 +542,6 @@ useRobotStore.subscribe((state) => {
     state.baseRotation,
     state.revoluteAroundZOnly,
     state.revoluteFrameAxis,
+    state.useCommonNormalConvention,
   );
 });
