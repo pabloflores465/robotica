@@ -87,11 +87,18 @@ function buildRawDHRows(
     const isPrismatic = element.type === "prismatic";
 
     const thetaOffset = element.dhParams.theta;
-    const thetaBase = `theta_${rowIndex}`;
-    const theta =
-      Math.abs(thetaOffset) < 1e-10
-        ? thetaBase
-        : `${thetaBase} ${thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(thetaOffset))}`;
+    let theta: string;
+    if (isPrismatic) {
+      // For prismatic joints, theta is a constant
+      theta = Math.abs(thetaOffset) < 1e-10 ? "0" : formatPiAngle(thetaOffset);
+    } else {
+      // For revolute joints, theta is the variable
+      const thetaBase = `theta_${rowIndex}`;
+      theta =
+        Math.abs(thetaOffset) < 1e-10
+          ? thetaBase
+          : `${thetaBase} ${thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(thetaOffset))}`;
+    }
 
     // Assign d label before r so that length indices follow the physical
     // chain order (d_i gets a lower L-number than r_i for the same row),
@@ -125,11 +132,18 @@ function buildRemappedDHRows(
   nextLengthLabel: (value: number) => string,
 ): DHRowFormatted[] {
   return standardRows.map((row) => {
-    const thetaBase = `theta_${row.index}`;
-    const theta =
-      Math.abs(row.thetaOffset) < 1e-10
-        ? thetaBase
-        : `${thetaBase} ${row.thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(row.thetaOffset))}`;
+    let theta: string;
+    if (row.isPrismatic) {
+      // For prismatic joints, theta is a constant
+      theta = Math.abs(row.thetaOffset) < 1e-10 ? "0" : formatPiAngle(row.thetaOffset);
+    } else {
+      // For revolute joints, theta is the variable
+      const thetaBase = `theta_${row.index}`;
+      theta =
+        Math.abs(row.thetaOffset) < 1e-10
+          ? thetaBase
+          : `${thetaBase} ${row.thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(row.thetaOffset))}`;
+    }
 
     // Assign d label before r to preserve physical chain ordering
     const dBase = `d_${row.index}`;
