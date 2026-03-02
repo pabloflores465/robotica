@@ -26,6 +26,7 @@ function makeRevoluteJoint(
 function makePrismaticJoint(
   rotationAxis: RotationAxis = "z",
   d: number = 0,
+  variableValue: number = 0,
 ): Joint {
   return {
     id: crypto.randomUUID(),
@@ -35,7 +36,7 @@ function makePrismaticJoint(
     dhParams: { theta: 0, d, a: 0, alpha: 0 },
     rotationAxis,
     frameAngle: 0,
-    variableValue: 0,
+    variableValue,
     minLimit: -5,
     maxLimit: 5,
   };
@@ -221,16 +222,91 @@ describe("computeStandardDHTable", () => {
     expect(rows[0]!.d).toBeCloseTo(0);
   });
 
-  it("prismatic joint preserves isPrismatic flag", () => {
+  it("prismatic joint gets its own row with isPrismatic flag", () => {
     const elements = [
       makeLinkElement("+z", 1),
       makePrismaticJoint("z", 0.5),
     ];
     const rows = computeStandardDHTable(elements, "z");
+    expect(rows).toHaveLength(1);
     expect(rows[0]!.isPrismatic).toBe(true);
     expect(rows[0]!.isRevolute).toBe(false);
-    // d includes the link + joint's own d offset
+    // d includes the link (abs) + joint's own d offset
     expect(rows[0]!.d).toBeCloseTo(1.5);
+  });
+
+  it("prismatic joint between revolute joints creates 3 rows", () => {
+    const elements = [
+      makeRevoluteJoint("z"),
+      makePrismaticJoint("z", 0, 1.5),
+      makeRevoluteJoint("z"),
+    ];
+    const rows = computeStandardDHTable(elements, "z");
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.isRevolute).toBe(true);
+    expect(rows[1]!.isPrismatic).toBe(true);
+    expect(rows[2]!.isRevolute).toBe(true);
+  });
+
+  it("prismatic joint before revolute both generate rows", () => {
+    const elements = [
+      makePrismaticJoint("z", 0, 1.5),
+      makeRevoluteJoint("z"),
+    ];
+    const rows = computeStandardDHTable(elements, "z");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.isPrismatic).toBe(true);
+    expect(rows[1]!.isRevolute).toBe(true);
+  });
+
+  it("negative link d values produce positive d in DH table", () => {
+    const elements = [
+      makeLinkElement("-z", 0.3),
+      makeRevoluteJoint("z"),
+    ];
+    const rows = computeStandardDHTable(elements, "z");
+    expect(rows).toHaveLength(1);
+    // Link is -z with length 0.3 -> dhParams.d = -0.3, but abs() gives 0.3
+    expect(rows[0]!.d).toBeCloseTo(0.3);
+  });
+
+  it("negative link d values produce correct abs d in full robot chain", () => {
+    // Same reference robot but with negative-direction Z links.
+    // Z-links placed BEFORE the joint they serve (DH convention ordering).
+    const d = 0.5;
+    const L1 = 1.0, L2 = 0.8, L3 = 1.2, L4 = 0.6, L5 = 0.9;
+
+    const elements = [
+      makeLinkElement("-z", d),       // d_1 (negative dir, abs -> positive)
+      makeRevoluteJoint("z"),         // Joint 1
+      makeLinkElement("+x", L1),      // a_1
+      makeLinkElement("-z", L2),      // d_2 (negative dir, abs -> positive)
+      makeRevoluteJoint("z"),         // Joint 2
+      makeLinkElement("+x", L3),      // a_2
+      makeLinkElement("-z", L4),      // d_3 (negative dir, abs -> positive)
+      makeRevoluteJoint("z"),         // Joint 3
+      makeLinkElement("+x", L5),      // a_3
+      makeRevoluteJoint("x"),         // Joint 4 (axis change z->x)
+      makeRevoluteJoint("x"),         // Joint 5
+    ];
+    const rows = computeStandardDHTable(elements, "z");
+    expect(rows).toHaveLength(5);
+
+    // All d values should be positive despite negative link directions
+    expect(rows[0]!.d).toBeCloseTo(d);
+    expect(rows[0]!.a).toBeCloseTo(L1);
+
+    expect(rows[1]!.d).toBeCloseTo(L2);
+    expect(rows[1]!.a).toBeCloseTo(L3);
+
+    expect(rows[2]!.d).toBeCloseTo(L4);
+    expect(rows[2]!.a).toBeCloseTo(L5);
+
+    expect(rows[3]!.d).toBeCloseTo(0);
+    expect(rows[3]!.alpha).toBeCloseTo(Math.PI / 2);
+
+    expect(rows[4]!.d).toBeCloseTo(0);
+    expect(rows[4]!.alpha).toBeCloseTo(0);
   });
 
   it("joint with built-in dhParams.a adds to accumulated a", () => {

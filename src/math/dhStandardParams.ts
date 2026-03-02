@@ -54,6 +54,8 @@ function computeAlpha(prevAxis: RotationAxis, currAxis: RotationAxis): number {
  * Compute standard DH parameter rows by absorbing link elements into
  * adjacent joints' parameters.
  *
+ * Every joint (revolute and prismatic) generates its own DH table row.
+ *
  * When the internal model stores joints and links as separate elements, the
  * standard DH table needs to fold link translations into each joint row:
  *   - d_i  = sum of link translations along Z_{i-1} (between joint i-1 and joint i)
@@ -61,14 +63,15 @@ function computeAlpha(prevAxis: RotationAxis, currAxis: RotationAxis): number {
  *   - alpha_i = twist angle from Z_{i-1} to Z_i
  *   - theta_i = joint's constant theta offset
  *
- * Also adds the joint's own dhParams.d to d_i (for joints that have a built-in
- * offset along their axis), and dhParams.a to a_i.
+ * Link contributions to d use Math.abs() because in frame-remap mode the
+ * sign of the offset is encoded in the frame assignment, not in the link
+ * modeling direction (same convention already used for a).
  */
 export function computeStandardDHTable(
   elements: Joint[],
   referenceAxis: RotationAxis,
 ): StandardDHRow[] {
-  // Find indices of joint elements in the flat list
+  // Find indices of all joint elements in the flat list
   const jointIndices: number[] = [];
   for (let i = 0; i < elements.length; i++) {
     if (elements[i]!.elementKind === "joint") {
@@ -88,12 +91,11 @@ export function computeStandardDHTable(
 
     // --- d_p: links between joint(p-1) and joint(p) aligned with prevAxis ---
     const linkBeforeStart = p === 0 ? 0 : jointIndices[p - 1]! + 1;
-    const linkBeforeEnd = jointIdx;
     let d = 0;
-    for (let i = linkBeforeStart; i < linkBeforeEnd; i++) {
+    for (let i = linkBeforeStart; i < jointIdx; i++) {
       const el = elements[i]!;
       if (el.elementKind === "link" && el.rotationAxis === prevAxis) {
-        d += el.dhParams.d;
+        d += Math.abs(el.dhParams.d);
       }
     }
     // Add the joint's own constant d offset (if any)
