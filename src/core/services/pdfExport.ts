@@ -79,7 +79,6 @@ interface DHRowFormatted {
 
 function buildRawDHRows(
   jointElements: Joint[],
-  assignConstantDLabel: (value: number) => string,
   nextLengthLabel: (value: number) => string,
 ): DHRowFormatted[] {
   return jointElements.map((element, index) => {
@@ -111,7 +110,7 @@ function buildRawDHRows(
         : `${dBase} ${dConst >= 0 ? "+" : "-"} ${formatNumber(Math.abs(dConst))}`
       : Math.abs(dConst) < 1e-10
         ? "0"
-        : assignConstantDLabel(dConst);
+        : nextLengthLabel(dConst);
 
     const rConst = element.dhParams.a;
     const r = Math.abs(rConst) < 1e-10 ? "0" : nextLengthLabel(rConst);
@@ -128,7 +127,6 @@ function buildRawDHRows(
 
 function buildRemappedDHRows(
   standardRows: StandardDHRow[],
-  assignConstantDLabel: (value: number) => string,
   nextLengthLabel: (value: number) => string,
 ): DHRowFormatted[] {
   return standardRows.map((row) => {
@@ -153,7 +151,7 @@ function buildRemappedDHRows(
         : `${dBase} ${row.d >= 0 ? "+" : "-"} ${formatNumber(Math.abs(row.d))}`
       : Math.abs(row.d) < 1e-10
         ? "0"
-        : assignConstantDLabel(row.d);
+        : nextLengthLabel(row.d);
 
     const r = Math.abs(row.a) < 1e-10 ? "0" : nextLengthLabel(row.a);
 
@@ -222,21 +220,11 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
 
   const lengthLegend: Array<{ label: string; value: number }> = [];
   let lengthIndex = 1;
-  let baseDWasAssigned = false;
 
   const nextLengthLabel = (value: number): string => {
     const label = `L${lengthIndex++}`;
     lengthLegend.push({ label, value: Math.abs(value) });
     return value < 0 ? `-${label}` : label;
-  };
-
-  const assignConstantDLabel = (value: number): string => {
-    if (!baseDWasAssigned) {
-      baseDWasAssigned = true;
-      lengthLegend.push({ label: "d", value: Math.abs(value) });
-      return value < 0 ? "-d" : "d";
-    }
-    return nextLengthLabel(value);
   };
 
   // Only joints appear in the DH parameter table (links are encoded
@@ -248,8 +236,8 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
     : null;
 
   const dhRows = standardRows
-    ? buildRemappedDHRows(standardRows, assignConstantDLabel, nextLengthLabel)
-    : buildRawDHRows(jointElements, assignConstantDLabel, nextLengthLabel);
+    ? buildRemappedDHRows(standardRows, nextLengthLabel)
+    : buildRawDHRows(jointElements, nextLengthLabel);
 
   const tableX = marginLeft + 18;
   const tableWidth = usableWidth - 36;
