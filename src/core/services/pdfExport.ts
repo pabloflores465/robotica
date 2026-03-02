@@ -69,6 +69,175 @@ function addFooter(
   doc.text(`Page ${pageIndex} / ${pageCount}`, marginLeft, pageHeight - 18);
 }
 
+// ---- Mathematical expression rendering ----
+// Renders strings containing "theta", "alpha", "pi", subscripts ("_N"),
+// and length labels ("L1") with proper Symbol-font Greek letters and
+// subscript positioning.
+
+interface MathToken {
+  text: string;
+  symbol: boolean; // true = render in PDF Symbol font
+  italic: boolean; // italic style (base font only, Symbol ignores this)
+  sub: boolean;    // subscript (smaller + shifted down)
+}
+
+const SUB_SCALE = 0.68;
+const SUB_SHIFT = 0.22; // fraction of baseSize
+
+function symTok(char: string, sub = false): MathToken {
+  return { text: char, symbol: true, italic: false, sub };
+}
+
+function txtTok(text: string, italic = false, sub = false): MathToken {
+  return { text, symbol: false, italic, sub };
+}
+
+function tokenizeMath(expr: string): MathToken[] {
+  const tokens: MathToken[] = [];
+  let pos = 0;
+
+  while (pos < expr.length) {
+    // Greek: theta
+    if (expr.startsWith("theta", pos)) {
+      tokens.push(symTok("q"));
+      pos += 5;
+      continue;
+    }
+    // Greek: alpha
+    if (expr.startsWith("alpha", pos)) {
+      tokens.push(symTok("a"));
+      pos += 5;
+      continue;
+    }
+    // Greek: pi (not followed by a letter, to avoid matching "pixel" etc.)
+    if (expr.startsWith("pi", pos)) {
+      const next = expr[pos + 2];
+      if (!next || !/[a-zA-Z]/.test(next)) {
+        tokens.push(symTok("p"));
+        pos += 2;
+        continue;
+      }
+    }
+    // Subscript containing Greek: _theta
+    if (expr.startsWith("_theta", pos)) {
+      tokens.push(symTok("q", true));
+      pos += 6;
+      continue;
+    }
+    // Subscript: _<digits> or _<single letter>
+    if (expr[pos] === "_") {
+      const m = expr.slice(pos).match(/^_(\d+|[a-z])/);
+      if (m) {
+        const isLetter = /^[a-z]$/.test(m[1]!);
+        tokens.push(txtTok(m[1]!, isLetter, true));
+        pos += m[0].length;
+        continue;
+      }
+    }
+    // Length label: L<digits>
+    if (expr[pos] === "L" && pos + 1 < expr.length && /\d/.test(expr[pos + 1]!)) {
+      tokens.push(txtTok("L", true));
+      const dm = expr.slice(pos + 1).match(/^\d+/);
+      if (dm) {
+        tokens.push(txtTok(dm[0], false, true));
+        pos += 1 + dm[0].length;
+      } else {
+        pos += 1;
+      }
+      continue;
+    }
+    // Variable letters before subscript: d_, r_, a_, A_, q_
+    if (
+      pos + 1 < expr.length &&
+      expr[pos + 1] === "_" &&
+      /^[draAq]$/.test(expr[pos]!)
+    ) {
+      tokens.push(txtTok(expr[pos]!, true));
+      pos += 1;
+      continue;
+    }
+    // Regular character
+    tokens.push(txtTok(expr[pos]!));
+    pos += 1;
+  }
+
+  return tokens;
+}
+
+function measureMathTokens(
+  doc: jsPDF,
+  tokens: MathToken[],
+  baseSize: number,
+  baseFont: string,
+  baseStyle: string,
+): number {
+  let w = 0;
+  for (const t of tokens) {
+    if (t.symbol) {
+      doc.setFont("symbol", "normal");
+    } else {
+      doc.setFont(baseFont, t.italic ? "italic" : baseStyle);
+    }
+    doc.setFontSize(t.sub ? baseSize * SUB_SCALE : baseSize);
+    w += doc.getTextWidth(t.text);
+  }
+  return w;
+}
+
+function renderMathTokens(
+  doc: jsPDF,
+  tokens: MathToken[],
+  x: number,
+  y: number,
+  baseSize: number,
+  baseFont: string,
+  baseStyle: string,
+): number {
+  let cx = x;
+  for (const t of tokens) {
+    if (t.symbol) {
+      doc.setFont("symbol", "normal");
+    } else {
+      doc.setFont(baseFont, t.italic ? "italic" : baseStyle);
+    }
+    const size = t.sub ? baseSize * SUB_SCALE : baseSize;
+    doc.setFontSize(size);
+    const dy = t.sub ? baseSize * SUB_SHIFT : 0;
+    doc.text(t.text, cx, y + dy);
+    cx += doc.getTextWidth(t.text);
+  }
+  return cx - x;
+}
+
+function renderMathCentered(
+  doc: jsPDF,
+  expr: string,
+  centerX: number,
+  y: number,
+  baseSize: number,
+  baseFont: string = "times",
+  baseStyle: string = "normal",
+): void {
+  const tokens = tokenizeMath(expr);
+  const w = measureMathTokens(doc, tokens, baseSize, baseFont, baseStyle);
+  renderMathTokens(doc, tokens, centerX - w / 2, y, baseSize, baseFont, baseStyle);
+}
+
+function renderMathLeft(
+  doc: jsPDF,
+  expr: string,
+  startX: number,
+  y: number,
+  baseSize: number,
+  baseFont: string = "times",
+  baseStyle: string = "normal",
+): number {
+  const tokens = tokenizeMath(expr);
+  return renderMathTokens(doc, tokens, startX, y, baseSize, baseFont, baseStyle);
+}
+
+// ---- DH row formatting ----
+
 interface DHRowFormatted {
   i: string;
   theta: string;
@@ -165,6 +334,8 @@ function buildRemappedDHRows(
   });
 }
 
+// ---- PDF generation ----
+
 export function downloadDhReportPdf(options: DHReportOptions): void {
   const { elements, revoluteAroundZOnly, revoluteFrameAxis } = options;
   if (elements.length === 0) return;
@@ -212,10 +383,8 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   doc.line(marginLeft, y, marginLeft + usableWidth, y);
   y += 14;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
   doc.setTextColor(30, 35, 45);
-  doc.text("DH matrix (theta, alpha, r, d)", marginLeft, y);
+  renderMathLeft(doc, "DH matrix (theta, alpha, r, d)", marginLeft, y, 10, "helvetica", "bold");
   y += 12;
 
   const lengthLegend: Array<{ label: string; value: number }> = [];
@@ -274,24 +443,22 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
       doc.line(xLine, y + 8, xLine, y + panelHeight - 8);
     }
 
-    doc.setFont("times", "italic");
-    doc.setFontSize(16);
+    // Table headers with math rendering (Greek symbols + subscripts)
     doc.setTextColor(245, 245, 245);
     headers.forEach((header, idx) => {
       const cellLeft = colLefts[idx]!;
       const cellWidth = colWidths[idx]!;
-      doc.text(header, cellLeft + cellWidth / 2, headerY, { align: "center" });
+      renderMathCentered(doc, header, cellLeft + cellWidth / 2, headerY, 16, "times", "italic");
     });
 
-    doc.setFont("times", "normal");
-    doc.setFontSize(13);
+    // Table cell values with math rendering
     rowsInPage.forEach((row, localIdx) => {
       const rowY = y + headerHeight + 16 + localIdx * rowHeight;
       const values = [row.i, row.theta, row.alpha, row.r, row.d];
       values.forEach((value, idx) => {
         const cellLeft = colLefts[idx]!;
         const cellWidth = colWidths[idx]!;
-        doc.text(value, cellLeft + cellWidth / 2, rowY, { align: "center" });
+        renderMathCentered(doc, value, cellLeft + cellWidth / 2, rowY, 13);
       });
     });
 
@@ -301,11 +468,9 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
 
   if (lengthLegend.length > 0) {
     ensureSpace(14);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
     doc.setTextColor(70, 80, 95);
     const legendText = lengthLegend.map((entry) => `${entry.label}=${formatNumber(entry.value)}`).join("   ");
-    doc.text(`Length parameters: ${legendText}`, marginLeft, y);
+    renderMathLeft(doc, `Length parameters: ${legendText}`, marginLeft, y, 8.5, "helvetica", "normal");
     y += 12;
   }
 
@@ -314,10 +479,8 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   doc.line(marginLeft, y, marginLeft + usableWidth, y);
   y += 14;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
   doc.setTextColor(30, 35, 45);
-  doc.text("Effective variables and A_i matrix", marginLeft, y);
+  renderMathLeft(doc, "Effective variables and A_i matrix", marginLeft, y, 10, "helvetica", "bold");
   y += 14;
 
   // Build per-joint matrix entries from either standard DH rows (remap ON) or raw params (OFF).
@@ -388,45 +551,58 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
 
     ensureSpace(106);
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.5);
+    // Section heading: "N. theta_N (axis Z)" or "N. d_N (axis Z)"
     doc.setTextColor(35, 42, 55);
     const paramLabel = entry.isPrismatic
       ? `d_${entry.index}`
       : `theta_${entry.index}`;
-    doc.text(
+    renderMathLeft(
+      doc,
       `${entry.index}. ${paramLabel} (axis ${entry.axisLabel})`,
       marginLeft,
       y,
+      9.5,
+      "helvetica",
+      "bold",
     );
     y += 12;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
+    // Formula lines with math rendering
     doc.setTextColor(70, 78, 92);
-    doc.text(
+    renderMathLeft(
+      doc,
       `theta* = theta + q_theta = ${formatNumber(entry.thetaConst)} + ${formatNumber(entry.qTheta)} = ${formatNumber(thetaEffective)} rad`,
       marginLeft + 4,
       y,
+      8.5,
+      "helvetica",
+      "normal",
     );
     y += 10;
-    doc.text(
+    renderMathLeft(
+      doc,
       `d* = d + q_d = ${formatNumber(entry.dConst)} + ${formatNumber(entry.qD)} = ${formatNumber(dEffective)}`,
       marginLeft + 4,
       y,
+      8.5,
+      "helvetica",
+      "normal",
     );
     y += 10;
-    doc.text(
+    renderMathLeft(
+      doc,
       `alpha = ${formatNumber(entry.alpha)} rad (${formatNumber(entry.alpha * RAD_TO_DEG, 2)} deg), r = ${formatNumber(entry.a)}`,
       marginLeft + 4,
       y,
+      8.5,
+      "helvetica",
+      "normal",
     );
     y += 10;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    // A_i matrix label
     doc.setTextColor(95, 105, 122);
-    doc.text(`A_${entry.index}:`, marginLeft + 4, y);
+    renderMathLeft(doc, `A_${entry.index}:`, marginLeft + 4, y, 8, "helvetica", "normal");
     y += 10;
 
     doc.setFont("courier", "normal");
