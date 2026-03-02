@@ -8,6 +8,7 @@ import DHTable from "./DHTable";
 import JointSliders, { ResetAllJointsButton } from "./JointSliders";
 import TransformPanel from "./TransformPanel";
 import logger from "../../core/services/logger";
+import { downloadDhReportPdf } from "../../core/services/pdfExport";
 
 function exportDiagram(): void {
   const {
@@ -31,6 +32,16 @@ function exportDiagram(): void {
   a.download = "dh-diagram.json";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportPdfReport(): void {
+  const { elements, revoluteAroundZOnly, revoluteFrameAxis } = useRobotStore.getState();
+  if (elements.length === 0) return;
+  downloadDhReportPdf({
+    elements,
+    revoluteAroundZOnly,
+    revoluteFrameAxis,
+  });
 }
 
 function validateDiagramData(raw: unknown): DiagramData | null {
@@ -115,6 +126,15 @@ export default function Sidebar({ onClose, sidebarWidth }: SidebarProps) {
               className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-800 transition-all"
             >
               Export
+            </button>
+          )}
+          {elements.length > 0 && (
+            <button
+              onClick={exportPdfReport}
+              title="Download PDF report"
+              className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-800 transition-all"
+            >
+              PDF
             </button>
           )}
           <button

@@ -12,7 +12,10 @@ const AXIS_ROTATIONS: Record<RotationAxis, [number, number, number]> = {
   z: [Math.PI / 2, 0, 0],
 };
 
-export default function JointMesh({ type, rotationAxis = "z" }: JointMeshProps) {
+export default function JointMesh({
+  type,
+  rotationAxis = "z",
+}: JointMeshProps) {
   if (type === "revolute") {
     return (
       <mesh rotation={AXIS_ROTATIONS[rotationAxis]}>
