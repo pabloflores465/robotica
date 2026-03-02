@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import type { Joint, RotationAxis } from "../types/robot";
 import { computeDHMatrix, getEffectiveDHParams } from "../../math/dhTransform";
 import { multiplyMatrices, rotationAroundAxis } from "../../math/matrixOps";
+import { computeStandardDHTable } from "../../math/dhStandardParams";
 
 export interface DHReportOptions {
   elements: Joint[];
@@ -62,6 +63,92 @@ function addFooter(
   doc.setFontSize(8);
   doc.setTextColor(120, 130, 150);
   doc.text(`Page ${pageIndex} / ${pageCount}`, marginLeft, pageHeight - 18);
+}
+
+interface DHRowFormatted {
+  i: string;
+  theta: string;
+  alpha: string;
+  r: string;
+  d: string;
+}
+
+function buildRawDHRows(
+  jointElements: Joint[],
+  assignConstantDLabel: (value: number) => string,
+  nextLengthLabel: (value: number) => string,
+): DHRowFormatted[] {
+  return jointElements.map((element, index) => {
+    const rowIndex = index + 1;
+    const isPrismatic = element.type === "prismatic";
+
+    const thetaOffset = element.dhParams.theta;
+    const thetaBase = `theta_${rowIndex}`;
+    const theta =
+      Math.abs(thetaOffset) < 1e-10
+        ? thetaBase
+        : `${thetaBase} ${thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(thetaOffset))}`;
+
+    // Assign d label before r so that length indices follow the physical
+    // chain order (d_i gets a lower L-number than r_i for the same row),
+    // matching the standard DH convention labeling.
+    const dConst = element.dhParams.d;
+    const dBase = `d_${rowIndex}`;
+    const d = isPrismatic
+      ? Math.abs(dConst) < 1e-10
+        ? dBase
+        : `${dBase} ${dConst >= 0 ? "+" : "-"} ${formatNumber(Math.abs(dConst))}`
+      : Math.abs(dConst) < 1e-10
+        ? "0"
+        : assignConstantDLabel(dConst);
+
+    const rConst = element.dhParams.a;
+    const r = Math.abs(rConst) < 1e-10 ? "0" : nextLengthLabel(rConst);
+
+    return {
+      i: String(rowIndex),
+      theta,
+      alpha: formatPiAngle(element.dhParams.alpha),
+      r,
+      d,
+    };
+  });
+}
+
+function buildRemappedDHRows(
+  elements: Joint[],
+  referenceAxis: RotationAxis,
+  assignConstantDLabel: (value: number) => string,
+  nextLengthLabel: (value: number) => string,
+): DHRowFormatted[] {
+  const standardRows = computeStandardDHTable(elements, referenceAxis);
+  return standardRows.map((row) => {
+    const thetaBase = `theta_${row.index}`;
+    const theta =
+      Math.abs(row.thetaOffset) < 1e-10
+        ? thetaBase
+        : `${thetaBase} ${row.thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(row.thetaOffset))}`;
+
+    // Assign d label before r to preserve physical chain ordering
+    const dBase = `d_${row.index}`;
+    const d = row.isPrismatic
+      ? Math.abs(row.d) < 1e-10
+        ? dBase
+        : `${dBase} ${row.d >= 0 ? "+" : "-"} ${formatNumber(Math.abs(row.d))}`
+      : Math.abs(row.d) < 1e-10
+        ? "0"
+        : assignConstantDLabel(row.d);
+
+    const r = Math.abs(row.a) < 1e-10 ? "0" : nextLengthLabel(row.a);
+
+    return {
+      i: String(row.index),
+      theta,
+      alpha: formatPiAngle(row.alpha),
+      r,
+      d,
+    };
+  });
 }
 
 export function downloadDhReportPdf(options: DHReportOptions): void {
@@ -140,42 +227,9 @@ export function downloadDhReportPdf(options: DHReportOptions): void {
   // in the a/d parameters of their adjacent joints).
   const jointElements = elements.filter((el) => el.elementKind === "joint");
 
-  const dhRows = jointElements.map((element, index) => {
-    const rowIndex = index + 1;
-    const isRevolute = element.type === "revolute";
-    const isPrismatic = element.type === "prismatic";
-
-    const thetaOffset = element.dhParams.theta;
-    const thetaBase = `theta_${rowIndex}`;
-    const theta =
-      Math.abs(thetaOffset) < 1e-10
-        ? thetaBase
-        : `${thetaBase} ${thetaOffset >= 0 ? "+" : "-"} ${formatPiAngle(Math.abs(thetaOffset))}`;
-
-    // Assign d label before r so that length indices follow the physical
-    // chain order (d_i gets a lower L-number than r_i for the same row),
-    // matching the standard DH convention labeling.
-    const dConst = element.dhParams.d;
-    const dBase = `d_${rowIndex}`;
-    const d = isPrismatic
-      ? Math.abs(dConst) < 1e-10
-        ? dBase
-        : `${dBase} ${dConst >= 0 ? "+" : "-"} ${formatNumber(Math.abs(dConst))}`
-      : Math.abs(dConst) < 1e-10
-        ? "0"
-        : assignConstantDLabel(dConst);
-
-    const rConst = element.dhParams.a;
-    const r = Math.abs(rConst) < 1e-10 ? "0" : nextLengthLabel(rConst);
-
-    return {
-      i: String(rowIndex),
-      theta,
-      alpha: formatPiAngle(element.dhParams.alpha),
-      r,
-      d,
-    };
-  });
+  const dhRows = revoluteAroundZOnly
+    ? buildRemappedDHRows(elements, revoluteFrameAxis, assignConstantDLabel, nextLengthLabel)
+    : buildRawDHRows(jointElements, assignConstantDLabel, nextLengthLabel);
 
   const tableX = marginLeft + 18;
   const tableWidth = usableWidth - 36;
